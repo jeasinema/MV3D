@@ -96,6 +96,7 @@ def non_max_suppress(boxes, scores, num_classes,
          
         cls_scores = scores[inds, j]
         cls_boxes  = boxes [inds, j*4:(j+1)*4]
+        print(cls_scores, cls_boxes)
         cls_dets   = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(np.float32, copy=False) 
 
         # is_box_vote=0

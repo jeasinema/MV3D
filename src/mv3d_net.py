@@ -594,18 +594,35 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
     }
 
-
-if __name__ == '__main__':
-    import  numpy as np
-    x =tf.placeholder(tf.float32,(None),name='x')
-    y = tf.placeholder(tf.float32,(None),name='y')
-    idxs = tf.where(tf.not_equal(x,0))
-    # weights = tf.cast(tf.not_equal(x,0),tf.float32)
-    y_w = tf.gather(y,idxs)
+def test_roi_pooling():
+    import numpy as np 
+    rgb_images = tf.placeholder(shape=[None, *(375, 1242, 3)], dtype=tf.float32, name='rgb_images')
+    rgb_rois = tf.placeholder(shape=[None, 5], dtype=tf.float32, name='rgb_rois')
+    res = tf_roipooling(rgb_images, rgb_rois, 100, 200, 1)
     sess = tf.Session()
     with sess.as_default():
-        ret= sess.run(y_w, feed_dict={
-            x:np.array([1.0,1.0,0.,2.]),
-            y: np.array([1., 2., 2., 3.]),
+        ret = sess.run(res, feed_dict={
+            rgb_images:np.ones((1, 375, 1242, 3)),
+            rgb_rois:np.ones((1, 5)),
         })
         print(ret)
+
+def test_nms():
+    import numpy as np
+    
+
+if __name__ == '__main__':
+    test_roi_pooling()
+    # import  numpy as np
+    # x =tf.placeholder(tf.float32,(None),name='x')
+    # y = tf.placeholder(tf.float32,(None),name='y')
+    # idxs = tf.where(tf.not_equal(x,0))
+    # # weights = tf.cast(tf.not_equal(x,0),tf.float32)
+    # y_w = tf.gather(y,idxs)
+    # sess = tf.Session()
+    # with sess.as_default():
+    #     ret= sess.run(y_w, feed_dict={
+    #         x: np.array([1.0,1.0,0.,2.]),
+    #         y: np.array([1., 2., 2., 3.]),
+    #     })
+    #     print(ret)

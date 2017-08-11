@@ -157,7 +157,7 @@ class MV3D(object):
         # set anchor boxes
         self.top_stride = self.net['top_feature_stride']
         top_feature_shape = get_top_feature_shape(top_shape, self.top_stride)
-        self.top_view_anchors, self.anchors_inside_inds = make_anchors(self.bases, self.top_stride,                                                                    top_shape[0:2], top_feature_shape[0:2])
+        self.top_view_anchors, self.anchors_inside_inds = make_anchors(self.bases, self.top_stride, top_shape[0:2], top_feature_shape[0:2])
         self.anchors_inside_inds = np.arange(0, len(self.top_view_anchors), dtype=np.int32)  # use all  #<todo>
 
         self.log_subdir = None
@@ -198,6 +198,7 @@ class MV3D(object):
 
 
     def predict(self, top_view, front_view, rgb_image):
+        print('fuck predict')
         self.lables = []  # todo add lables output
 
         self.top_view = top_view
@@ -211,8 +212,10 @@ class MV3D(object):
             K.learning_phase(): True
         }
 
+        print('fuck sess 1 start')
         self.batch_proposals, self.batch_proposal_scores = \
             self.sess.run([self.net['proposals'], self.net['proposal_scores']], fd1)
+        print('fuck sess 1 fin')
         self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
         self.top_rois = self.batch_proposals
         if len(self.top_rois) == 0:
@@ -233,11 +236,13 @@ class MV3D(object):
 
         }
 
+        print('fuck sess 2 start')
         self.fuse_probs, self.fuse_deltas = \
             self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd2)
+        print('fuck sess 2 fin')
 
         self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=0.5)
-
+        print('fuck nms fin')
         return self.boxes3d, self.lables
 
 
@@ -595,9 +600,11 @@ class Trainer(MV3D):
     def log_prediction(self, batch_top_view, batch_front_view, batch_rgb_images,
                        batch_gt_labels=None, batch_gt_boxes3d=None, print_iou=False,
                        log_rpn=False, step=None, scope_name=''):
-
+        print('fuck here log_predict')
         boxes3d, lables = self.predict(batch_top_view, batch_front_view, batch_rgb_images)
+        print('fuck predict fin')
         self.predict_log(self.log_subdir,log_rpn=log_rpn, step=step, scope_name=scope_name)
+        print('fuck predict_log fin')
 
         if type(batch_gt_boxes3d)==np.ndarray and type(batch_gt_labels)==np.ndarray:
             inds = np.where(batch_gt_labels[0]!=0)
@@ -697,11 +704,13 @@ class Trainer(MV3D):
 
 
                 # fit
+                print('fuck0')
                 t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss= \
                     self.fit_iteration(self.batch_rgb_images, self.batch_top_view, self.batch_front_view,
                                        self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
                                        is_validation =is_validation, summary_it=summary_it,
                                        summary_runmeta=summary_runmeta, log=log_this_iter)
+                print('fuck2')
 
                 if print_loss:
                     self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
@@ -834,15 +843,16 @@ class Trainer(MV3D):
                 t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
                     sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
             else:
-
                 _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
                     sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss],
                              feed_dict=fd2)
+        print('fuck0.1')
         if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
                                     batch_gt_labels, batch_gt_boxes3d,
                                     step=self.n_global_step, scope_name=scope_name, print_iou=True)
-
+        print('fuck1')
         return t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss
+
 
 
 
