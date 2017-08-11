@@ -6,7 +6,7 @@ from config import *
 import argparse
 import os
 from utils.training_validation_data_splitter import TrainingValDataSplitter
-from utils.batch_loading import BatchLoading2 as BatchLoading
+from utils.batch_loading import BatchLoading3
 
 
 if __name__ == '__main__':
@@ -102,12 +102,14 @@ if __name__ == '__main__':
             '2011_09_26': ['0013', '0027', '0048',
                            '0061', '0015', '0028', '0051', '0064']
         }
-
-    with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
-        with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,
-                          queue_size=1, require_shuffle=True) as validation:
+    # for BatchLoading, only tags is essential and it must be type of list[]
+    #with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
+        #with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,
+    #                      queue_size=1, require_shuffle=True) as validation:
+    with BatchLoading3(tags=training_dataset, require_shuffle=True) as training:
+      with BatchLoading3(tags=validation_dataset, require_shuffle=False) as validation:
 
             train = mv3d.Trainer(train_set=training, validation_set=validation,
                                  pre_trained_weights=weights, train_targets=targets, log_tag=tag,
                                  continue_train = args.continue_train)
-            train(max_iter=max_iter)
+            train(max_iter=max_iter) 

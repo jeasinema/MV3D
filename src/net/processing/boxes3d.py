@@ -117,8 +117,8 @@ def convert_points_to_croped_image(img_points):
 
 def box3d_to_rgb_box(boxes3d, Mt=None, Kt=None):
     if (cfg.DATA_SETS_TYPE == 'kitti'):
-        if Mt is None: Mt = np.array(MATRIX_Mt)
-        if Kt is None: Kt = np.array(MATRIX_Kt)
+        if Mt is None: Mt = np.array(cfg.MATRIX_Mt)
+        if Kt is None: Kt = np.array(cfg.MATRIX_Kt)
 
         num  = len(boxes3d)
         projections = np.zeros((num,8,2),  dtype=np.int32)
@@ -459,7 +459,7 @@ def box3d_intersection(box_a, box_b):
     return z_intersection * xy_intersection
 
 
-def boxes3d_score_iou(gt_boxes3d: np.ndarray, pre_boxes3d: np.ndarray):
+def boxes3d_score_iou(gt_boxes3d, pre_boxes3d):
     n_pre_box = pre_boxes3d.shape[0]
     if n_pre_box ==0: return 0.
     n_gt_box = gt_boxes3d.shape[0]

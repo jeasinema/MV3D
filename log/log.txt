@@ -1,0 +1,22 @@
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------
+iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  
+-------------------------------------------------------------------------------------

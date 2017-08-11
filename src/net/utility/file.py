@@ -1,4 +1,5 @@
-import builtins as __builtin__
+# import __builtin__
+import builtins
 import sys
 import os
 import glob
@@ -41,7 +42,8 @@ def open(file, mode=None, encoding=None):
             dir = os.path.dirname(file)
             if not os.path.isdir(dir):  os.makedirs(dir)
 
-    f = __builtin__.open(file, mode=mode, encoding=encoding)
+# f = __builtin__.open(file, mode=mode, encoding=encoding)
+    f = open(file, mode=mode, encoding=encoding)
     return f
 
 
@@ -69,7 +71,7 @@ class Logger(object):
 
     def open(self, file, mode=None):
         if mode is None: mode ='w'
-        self.file = open(file, mode)
+        self.file = builtins.open(file, mode)
 
     def write(self, message, is_terminal=1, is_file=1 ):
         if message =='\r': is_file=0

@@ -539,6 +539,210 @@ class BatchLoading2:
     def get_frame_info(self):
         return self.tags[self.tag_index]
 
+class BatchLoading3:
+
+    def __init__(self, bags={}, tags={}, queue_size=20, require_shuffle=False,
+                 require_log=False, is_testset=False):
+        self.is_testset = is_testset
+        self.shuffled = require_shuffle
+        self.preprocess = data.Preprocess()
+        self.raw_img = Image(tags)
+        self.raw_tracklet = Tracklet(tags)
+        self.raw_lidar = Lidar(tags)
+
+        self.bags = bags
+        # get all tags
+        self.tags = self.raw_lidar.get_tags()
+        assert(len(self.raw_lidar.get_tags()) == \
+               len(self.raw_tracklet.get_tags()) == \
+               len(self.raw_img.get_tags()))
+
+        if self.shuffled:
+            self.tags = shuffle(self.tags)
+
+        self.tag_index = 0
+        self.size = len(self.tags)
+
+        self.require_log = require_log
+
+        self.cache_size = queue_size
+        self.loader_need_exit = Value('i', 0)
+
+        if use_thread:
+            self.prepr_data=[]
+            self.lodaer_processing = threading.Thread(target=self.loader)
+        else:
+            self.preproc_data_queue = Queue()
+            self.buffer_blocks = [Array('h', 41246691) for i in range(queue_size)]
+            self.blocks_usage = Array('i', range(queue_size))
+            self.lodaer_processing = Process(target=self.loader)
+        self.lodaer_processing.start()
+
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.loader_need_exit.value=True
+        if self.require_log: print('set loader_need_exit True')
+        self.lodaer_processing.join()
+        if self.require_log: print('exit lodaer_processing')
+
+    def keep_gt_inside_range(self, train_gt_labels, train_gt_boxes3d):
+        train_gt_labels = np.array(train_gt_labels, dtype=np.int32)
+        train_gt_boxes3d = np.array(train_gt_boxes3d, dtype=np.float32)
+        if train_gt_labels.shape[0] == 0:
+            return False, None, None
+        assert train_gt_labels.shape[0] == train_gt_boxes3d.shape[0]
+
+        # get limited train_gt_boxes3d and train_gt_labels.
+        keep = np.zeros((len(train_gt_labels)), dtype=bool)
+
+        for i in range(len(train_gt_labels)):
+            if box.box3d_in_top_view(train_gt_boxes3d[i]):
+                keep[i] = 1
+
+        # if all targets are out of range in selected top view, return True.
+        if np.sum(keep) == 0:
+            return False, None, None
+
+        train_gt_labels = train_gt_labels[keep]
+        train_gt_boxes3d = train_gt_boxes3d[keep]
+        return True, train_gt_labels, train_gt_boxes3d
+
+    def load_from_one_tag(self, one_frame_tag):
+        if self.is_testset:
+            obstacles = None
+        else:
+            obstacles = self.raw_tracklet.load(one_frame_tag)
+        rgb = self.raw_img.load(one_frame_tag)
+        lidar = self.raw_lidar.load(one_frame_tag)
+        return obstacles, rgb, lidar
+
+
+    def preprocess_one_frame(self, rgb, lidar, obstacles):
+        rgb = self.preprocess.rgb(rgb)
+        top = self.preprocess.lidar_to_top(lidar)
+        if self.is_testset:
+            return rgb, top, None, None
+        boxes3d = [self.preprocess.bbox3d(obs) for obs in obstacles]
+        labels = [self.preprocess.label(obs) for obs in obstacles]
+        return rgb, top, boxes3d, labels
+
+    def get_shape(self):
+        train_rgbs, train_tops, train_fronts, train_gt_labels, train_gt_boxes3d, _ = self.load()
+        top_shape = train_tops[0].shape
+        front_shape = train_fronts[0].shape
+        rgb_shape = train_rgbs[0].shape
+
+        return top_shape, front_shape, rgb_shape
+
+    def data_preprocessed(self):
+        # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
+        skip_frames = True
+        while skip_frames:
+            fronts = []
+            frame_tag = self.tags[self.tag_index]
+            obstacles, rgb, lidar = self.load_from_one_tag(frame_tag)
+            rgb, top, boxes3d, labels = self.preprocess_one_frame(rgb, lidar, obstacles)
+            if self.require_log and not self.is_testset:
+                draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
+                draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
+
+            self.tag_index += 1
+
+            # reset self tag_index to 0 and shuffle tag list
+            if self.tag_index >= self.size:
+                self.tag_index = 0
+                if self.shuffled:
+                    self.tags = shuffle(self.tags)
+            skip_frames = False
+
+            # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
+            if not self.is_testset:
+                is_gt_inside_range, batch_gt_labels_in_range, batch_gt_boxes3d_in_range = \
+                    self.keep_gt_inside_range(labels, boxes3d)
+                labels = batch_gt_labels_in_range
+                boxes3d = batch_gt_boxes3d_in_range
+                # if no gt labels inside defined range, discard this training frame.
+                if not is_gt_inside_range:
+                    skip_frames = True
+
+        return np.array([rgb]), np.array([top]), np.array([fronts]), np.array([labels]), \
+               np.array([boxes3d]), frame_tag
+
+    def find_empty_block(self):
+        idx = -1
+        for i in range(self.cache_size):
+            if self.blocks_usage[i] == 1:
+                continue
+            else:
+                idx = i
+                break
+        return idx
+
+
+    def loader(self):
+        if use_thread:
+            while self.loader_need_exit.value == 0:
+
+                if len(self.prepr_data) >=self.cache_size:
+                    time.sleep(1)
+                    # print('sleep ')
+                else:
+                    self.prepr_data = [(self.data_preprocessed())]+self.prepr_data
+                    # print('data_preprocessed')
+        else:
+            while self.loader_need_exit.value == 0:
+                empty_idx = self.find_empty_block()
+                if empty_idx == -1:
+                    time.sleep(1)
+                    # print('sleep ')
+                else:
+                    prepr_data = (self.data_preprocessed())
+                    # print('data_preprocessed')
+                    dumps = pickle.dumps(prepr_data)
+                    length = len(dumps)
+                    self.buffer_blocks[empty_idx][0:length] = dumps[0:length]
+
+                    self.preproc_data_queue.put({
+                        'index': empty_idx,
+                        'length': length
+                    })
+
+
+        if self.require_log:print('loader exit')
+
+
+
+    def load(self):
+        if use_thread:
+            while len(self.prepr_data)==0:
+                time.sleep(1)
+            data_ori = self.prepr_data.pop()
+
+
+        else:
+
+            # print('self.preproc_data_queue.qsize() = ', self.preproc_data_queue.qsize())
+            info = self.preproc_data_queue.get(block=True)
+            length = info['length']
+            block_index = info['index']
+            dumps = self.buffer_blocks[block_index][0:length]
+
+            #set flag
+            self.blocks_usage[block_index] = 0
+
+            # convert to bytes string
+            dumps = array.array('B',dumps).tostring()
+            data_ori = pickle.loads(dumps)
+
+        return data_ori
+
+
+
+    def get_frame_info(self):
+        return self.tags[self.tag_index]
 
 
 if __name__ == '__main__':

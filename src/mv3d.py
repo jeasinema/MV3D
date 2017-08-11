@@ -780,7 +780,7 @@ class Trainer(MV3D):
         ## run classification and regression loss -----------
         fd2 = {
             **fd1,
-
+           
             net['top_view']: batch_top_view,
             net['front_view']: batch_front_view,
             net['rgb_images']: batch_rgb_images,

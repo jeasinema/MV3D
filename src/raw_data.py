@@ -25,8 +25,9 @@ class RawData(object):
 
 class Image(RawData):
 
-    def __init__(self):
+    def __init__(self, prefix:dict=None):
         RawData.__init__(self)
+        self.prefix = prefix
         self.files_path_mapping= self.get_paths_mapping()
 
 
@@ -45,13 +46,19 @@ class Image(RawData):
         mapping={}
 
         # foreach dir1
-        for dir1 in  glob.glob(os.path.join(raw_dir, '*')):
+
+
+        for dir1 in glob.glob(os.path.join(raw_dir, '*')):
             name1 = os.path.basename(dir1)
+            if self.prefix is not None and name1 not in self.prefix.keys():
+                continue
 
             # foreach dir2
             for dir2 in glob.glob(os.path.join(dir1, '*')):
 
                 name2 = os.path.basename(dir2)
+                if name2.split('_')[-2] not in self.prefix[name1]:
+                    continue
 
                 # foreach files in dir2
                 files_path = glob.glob(os.path.join(dir2,'image_02','data', '*'))
@@ -70,8 +77,9 @@ class Image(RawData):
 
 class Tracklet(RawData):
 
-    def __init__(self):
+    def __init__(self, prefix:dict):
         RawData.__init__(self)
+        self.prefix = prefix
         self.frames_object=self.get_frames_objects()
 
 
@@ -95,11 +103,15 @@ class Tracklet(RawData):
         # foreach dir1
         for dir1 in  glob.glob(os.path.join(raw_dir, '*')):
             name1 = os.path.basename(dir1)
+            if self.prefix is not None and name1 not in self.prefix.keys():
+                continue
 
             # foreach dir2
             for dir2 in glob.glob(os.path.join(dir1, '*')):
 
                 name2 = os.path.basename(dir2)
+                if name2.split('_')[-2] not in self.prefix[name1]:
+                    continue
 
                 dir_tag = '%s/%s' % (name1, name2)
                 nframe = self.get_synced_nframe(dir_tag)
@@ -117,8 +129,9 @@ class Tracklet(RawData):
 
 
 class Lidar(RawData):
-    def __init__(self):
+    def __init__(self, prefix:dict):
         RawData.__init__(self)
+        self.prefix = prefix
         self.files_path_mapping = self.get_paths_mapping()
 
     def load(self, frame_tag: str) -> np.dtype:
@@ -137,10 +150,14 @@ class Lidar(RawData):
         # foreach dir1
         for dir1 in glob.glob(os.path.join(raw_dir, '*')):
             name1 = os.path.basename(dir1)
+            if self.prefix is not None and name1 not in self.prefix.keys():
+                continue
 
             # foreach dir2
             for dir2 in glob.glob(os.path.join(dir1, '*')):
                 name2 = os.path.basename(dir2)
+                if name2.split('_')[-2] not in self.prefix[name1]:
+                    continue
 
                 # foreach files in dir2
                 files_path = glob.glob(os.path.join(dir2, 'velodyne_points', 'data', '*'))
