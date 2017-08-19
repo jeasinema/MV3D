@@ -137,7 +137,66 @@ def top_feature_net_r(input, anchors, inds_inside, num_bases):
     print ('top: scale=%f, stride=%d'%(1./stride, stride))
     return feature, scores, probs, deltas, rois, roi_scores, stride
 
+def top_feature_net_feature_only(input):
+    stride=1.
+    #with tf.variable_scope('top-preprocess') as scope:
+    #    input = input
+    with tf.variable_scope('feature_only'):
+        with tf.variable_scope('top-block-1') as scope:
+            block = conv2d_bn_relu(input, num_kernels=32, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=32, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
+            stride *=2
 
+        with tf.variable_scope('top-block-2') as scope:
+            block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
+            stride *=2
+
+        with tf.variable_scope('top-block-3') as scope:
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='3')
+            block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
+            stride *=2
+
+        with tf.variable_scope('top-block-4') as scope:
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='3')
+
+    #<todo> feature = upsample2d(block, factor = 4,  ...)
+    feature = block
+
+    print ('top: scale=%f, stride=%d'%(1./stride, stride))
+    return feature, stride
+
+
+def top_feature_net_r_feature_only(input):
+    stride=1.
+    #with tf.variable_scope('top-preprocess') as scope:
+    #    input = input
+    batch_size, img_height, img_width, img_channel = input.get_shape().as_list()
+
+    with tf.variable_scope('feature_only'):
+        with tf.variable_scope('feature-extract-resnet') as scope:
+            print('build_resnet')
+            block = ResnetBuilder.resnet_tiny(input)
+
+            # resnet_input = resnet.get_layer('input_1').input
+            # resnet_output = resnet.get_layer('add_7').output
+            # resnet_f = Model(inputs=resnet_input, outputs=resnet_output)  # add_7
+            # # print(resnet_f.summary())
+            # block = resnet_f(input)
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(1, 1), stride=[1, 1, 1, 1], padding='SAME', name='2')
+            stride = 8
+
+    #<todo> feature = upsample2d(block, factor = 4,  ...)
+    feature = block
+
+    print ('top: scale=%f, stride=%d'%(1./stride, stride))
+    return feature, stride
 
 #------------------------------------------------------------------------------
 def rgb_feature_net(input):
@@ -309,7 +368,7 @@ def rgb_feature_net_x(input):
 
 #------------------------------------------------------------------------------
 def front_feature_net(input):
-
+    # unimplemented
     feature = None
     return feature
 
@@ -466,7 +525,6 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
 
 def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
-
     out_shape = (8, 3)
     stride = 8
 
@@ -480,6 +538,9 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     front_rois = tf.placeholder(shape=[None, 5], dtype=tf.float32, name='front_rois')
     rgb_rois = tf.placeholder(shape=[None, 5], dtype=tf.float32, name='rgb_rois')
 
+    #Naive implementattion using pointnet/conv3d for 2nd stage bbox regression
+    raw_lidar = tf.placeholder(shape=[None, 4], dtype=tf.float32, name='raw_lidar')
+
     with tf.variable_scope(top_view_rpn_name):
         # top feature
         if cfg.USE_RESNET_AS_TOP_BASENET==True:
@@ -490,13 +551,18 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
                 top_feature_net(top_view, top_anchors, top_inside_inds, len_bases)
 
         with tf.variable_scope('loss'):
-            # RRN
+            # RPN
             top_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='top_ind')
             top_pos_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='top_pos_ind')
             top_labels = tf.placeholder(shape=[None], dtype=tf.int32, name='top_label')
             top_targets = tf.placeholder(shape=[None, 4], dtype=tf.float32, name='top_target')
             top_cls_loss, top_reg_loss = rpn_loss(top_scores, top_deltas, top_inds, top_pos_inds,
                                                   top_labels, top_targets)
+    with tf.variable_scope('top_feature_only'):
+        if cfg.USE_RESNET_AS_TOP_BASENET==True:
+            top_features, top_feature_stride = top_feature_net_r_feature_only(top_view)
+        else:
+            top_features, top_feature_stride = top_feature_net_feature_only(top_view)
 
 
     with tf.variable_scope(imfeature_net_name) as scope:
@@ -544,6 +610,8 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         # include background class
         with tf.variable_scope('predict') as scope:
             dim = np.product([*out_shape])
+            # here is the output of fusenet(final output), since here it used the 
+            # num_class, so it can just classify the car and the background
             fuse_scores = linear(fuse_output, num_hiddens=num_class, name='score')
             fuse_probs = tf.nn.softmax(fuse_scores, name='prob')
             fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box')
@@ -552,6 +620,8 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         with tf.variable_scope('loss') as scope:
             fuse_labels = tf.placeholder(shape=[None], dtype=tf.int32, name='fuse_label')
             fuse_targets = tf.placeholder(shape=[None, *out_shape], dtype=tf.float32, name='fuse_target')
+            # in this implementation, it does not do NMS at final step, so the only NMS is done before fusenet(using score from PRN)
+            # no, the line above is not correct, just see function 'predict' in mv3d.py, it does nms at final step.
             fuse_cls_loss, fuse_reg_loss = fuse_loss(fuse_scores, fuse_deltas, fuse_labels, fuse_targets)
 
 
@@ -609,7 +679,6 @@ def test_roi_pooling():
 
 def test_nms():
     import numpy as np
-    
 
 if __name__ == '__main__':
     test_roi_pooling()

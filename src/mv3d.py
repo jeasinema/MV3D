@@ -32,17 +32,42 @@ from tensorflow.python import debug as tf_debug
 import pickle
 import subprocess
 import sys
+import math
 
 
 #http://3dimage.ee.tsinghua.edu.cn/cxz
 # "Multi-View 3D Object Detection Network for Autonomous Driving" - Xiaozhi Chen, CVPR 2017
 
+def kitti_roi3d_to_inner3d(kitti_roi3d):
+    # input: (N, 7) [ry, l, h, w, x, y, z]
+    # output: (N, 8, 3)
+    def kitti2inner3d(kitti_roi):
+        inner_roi = np.zeros((8, 3), dtype=np.float32)
+        ry, l, h, w, x, y, z = kitti_roi  # x, y, z are in camera coordinate
+        
+        # convert to lidar's coordinate
+        rz, l, h, w, x, y, z = -ry, w, h, l, z, -x, -y
+        inner_roi = box.box3d_compose((x, y, z), (h, w, l), (0, 0, rz))
+        return inner_roi
+
+    rois3d = np.zeros((len(kitti_roi3d), 8, 3), dtype=np.float32)
+    for i in range(len(kitti_roi3d)):
+        rois3d[i] = kitti2inner3d(kitti_roi3d[i])
+    return rois3d
+
+def project_to_top_roi(rois3d):
+    # input: (N, 8, 3)
+    # output: (N, 5)
+    boxes = box.box3d_to_top_box(rois3d)
+    batch_inds = np.zeros((len(boxes), 1), dtype=np.float32)
+    rois = np.hstack((batch_inds, boxes))
+    return rois
+
 def get_top_feature_shape(top_shape, stride):
     return (top_shape[0]//stride, top_shape[1]//stride)
 
 def project_to_roi3d(top_rois):
-    num = len(top_rois)
-    # rois3d = np.zeros((num,8,3))
+    num = len(top_rois)    # rois3d = np.zeros((num,8,3))
     rois3d = box.top_box_to_box3d(top_rois[:, 1:5])
     return rois3d
 
@@ -61,12 +86,25 @@ def project_to_rgb_roi(rois3d):
 
     return rois
 
+def project_to_front_roi(rois3d):
+    # input: (N, 8, 3)
+    def lidar_to_front(point):
+        return (
+            int(math.atan2(point[1], point[0])/cfg.VELODYNE_ANGULAR_RESOLUTION),
+            int(math.atan2(point[2], math.sqrt(point[0]**2 + point[1]**2)) \
+                /cfg.VELODYNE_VERTICAL_RESOLUTION)
+        )
+    
+    boxes = np.zeros((len(rois3d), 4), dtype=np.float32)
+    batch_inds = np.zeros((len(rois3d), 1), dtype=np.float32)
+    for index in range(len(rois3d)):
+        projection = np.array([lidar_to_front(cor) for cor in rois3d[index]])
+        assert(len(projection) == 8)
+        c_min, c_max = min(projection[:, 0]), max(projection[:, 0])
+        r_min, r_max = min(projection[:, 1]), max(projection[:, 1])
+        boxes[index, :] = np.array([c_min, r_min, c_max, r_max]) 
 
-# todo: finished project_to_front_roi
-def  project_to_front_roi(rois3d):
-    num  = len(rois3d)
-    rois = np.zeros((num,5),dtype=np.int32)
-
+    rois = np.hstack((batch_inds, boxes))
     return rois
 
 
@@ -136,9 +174,12 @@ class MV3D(object):
         self.log_msg = utilfile.Logger(cfg.LOG_DIR + '/log.txt', mode='a')
         self.track_log = utilfile.Logger(cfg.LOG_DIR + '/tracking_log.txt', mode='a')
 
+        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 0.5, visible_device_list='0,1')
 
         # creat sesssion
-        self.sess = tf.Session()
+        self.sess = tf.Session(config=tf.ConfigProto(
+            gpu_options=self.gpu_options
+        ))
         self.use_pretrain_weights=[]
 
         self.build_net(top_shape, front_shape, rgb_shape)
@@ -157,11 +198,13 @@ class MV3D(object):
         # set anchor boxes
         self.top_stride = self.net['top_feature_stride']
         top_feature_shape = get_top_feature_shape(top_shape, self.top_stride)
+        # since we use RPN, now we should generate all the candidate anchors w.r.t. the size of the input image
         self.top_view_anchors, self.anchors_inside_inds = make_anchors(self.bases, self.top_stride, top_shape[0:2], top_feature_shape[0:2])
         self.anchors_inside_inds = np.arange(0, len(self.top_view_anchors), dtype=np.int32)  # use all  #<todo>
 
         self.log_subdir = None
         self.top_image = None
+        self.front_image = None
         self.time_str = None
         self.frame_info =None
 
@@ -193,12 +236,13 @@ class MV3D(object):
     def gc(self):
         self.log_subdir = None
         self.top_image = None
+        self.front_image = None
         self.time_str = None
         self.frame_info =None
 
 
+     # this is used for testing
     def predict(self, top_view, front_view, rgb_image):
-        print('fuck predict')
         self.lables = []  # todo add lables output
 
         self.top_view = top_view
@@ -212,16 +256,16 @@ class MV3D(object):
             K.learning_phase(): True
         }
 
-        print('fuck sess 1 start')
         self.batch_proposals, self.batch_proposal_scores = \
             self.sess.run([self.net['proposals'], self.net['proposal_scores']], fd1)
-        print('fuck sess 1 fin')
         self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
         self.top_rois = self.batch_proposals
         if len(self.top_rois) == 0:
             return np.zeros((0, 8, 3)), []
 
         self.rois3d = project_to_roi3d(self.top_rois)
+        # Here we just use the pre-defined height to generate the z axis.
+        # In the origin paper, it is 1.45m, in this implementation is -2 and 0.5(2.5m)
         self.front_rois = project_to_front_roi(self.rois3d)
         self.rgb_rois = project_to_rgb_roi(self.rois3d)
 
@@ -236,13 +280,45 @@ class MV3D(object):
 
         }
 
-        print('fuck sess 2 start')
         self.fuse_probs, self.fuse_deltas = \
             self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd2)
-        print('fuck sess 2 fin')
 
         self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=0.5)
-        print('fuck nms fin')
+        return self.boxes3d, self.lables
+ 
+    # this is used for testing
+    def predict_3dop(self, proposals, proposal_scores, top_view, front_view, rgb_image):
+        # input: proposals: (N, 7)
+        #        proposal_scores: (N, 1)
+        self.lables = []  # todo add lables output
+        self.top_view, self.front_view, self.rgb_image = top_view, front_view, rgb_image
+
+        self.batch_proposals, self.batch_proposal_scores = proposals, proposal_scores
+        self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
+        self.rois3d =  kitti_roi3d_to_inner3d(self.batch_proposals)  #(N, 8, 3)
+        if len(self.rois3d) == 0:
+            return np.zeros((0, 8, 3)), []
+
+        self.top_rois = project_to_top_roi(self.rois3d)  #(N, 5)  [:, 0] is batch_inds, always remains zero, see rpn_nms() in rpn_nms_op.py
+        self.front_rois = project_to_front_roi(self.rois3d)  #(N, 5)
+        self.rgb_rois = project_to_rgb_roi(self.rois3d)  #(N, 5)
+
+        fd = {
+            self.net['top_view']: self.top_view[np.newaxis],
+            self.net['front_view']: self.front_view[np.newaxis],
+            self.net['rgb_images']: self.rgb_image[np.newaxis],
+
+            self.net['top_rois']: self.top_rois,
+            self.net['front_rois']: self.front_rois,
+            self.net['rgb_rois']: self.rgb_rois,
+            blocks.IS_TRAIN_PHASE: False,
+            K.learning_phase(): True
+        }
+
+        self.fuse_probs, self.fuse_deltas = \
+            self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd)
+
+        self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=0.5)
         return self.boxes3d, self.lables
 
 
@@ -324,7 +400,7 @@ class MV3D(object):
                 self.subnet_rpn.save_weights(self.sess)
 
             elif name == mv3d_net.fusion_net_name:
-                self.subnet_fusion.save_weights(self.sess)
+                self.subnet_fusion.save_weights(self.sess)  
 
             elif name == mv3d_net.imfeature_net_name:
                 self.subnet_imfeatrue.save_weights(self.sess)
@@ -419,7 +495,7 @@ class MV3D(object):
                                                      simple_value=value)])
         summary_writer.add_summary(summary, step)
 
-
+# predictor is used for testing
 class Predictor(MV3D):
     def __init__(self, top_shape, front_shape, rgb_shape, log_tag=None, weights_tag=None):
         weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
@@ -464,10 +540,12 @@ class Trainer(MV3D):
         self.val_summary_writer = None
         self.tensorboard_dir = None
         self.summ = None
-        self.iter_debug = 200
+        self.iter_debug = 50  #FIXME
         self.n_global_step = 0
 
         # saver
+        self.saver = tf.train.Saver()
+
         with self.sess.as_default():
 
             with tf.variable_scope('minimize_loss'):
@@ -579,6 +657,7 @@ class Trainer(MV3D):
     def log_fusion_net_target(self,rgb, scope_name=''):
         subdir = self.log_subdir
         top_image = self.top_image
+        front_image = self.front_image
 
         img_rgb_rois = box.draw_boxes(rgb, self.batch_rgb_rois[np.where(self.batch_fuse_labels == 0), 1:5][0],
                                       color=(0, 0, 255), thickness=1)
@@ -589,22 +668,20 @@ class Trainer(MV3D):
         self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step)
 
         # labels, deltas, rois3d, top_img, cam_img, class_color
-        top_img, cam_img = draw_fusion_target(self.batch_fuse_labels, self.batch_fuse_targets, self.batch_rois3d,
-                                              top_image, rgb, [[10, 20, 10], [255, 0, 0]])
+        top_img, cam_img, front_img = draw_fusion_target(self.batch_fuse_labels, self.batch_fuse_targets, self.batch_rois3d,
+                                              top_image, rgb, front_image, [[10, 20, 10], [255, 0, 0]])
         # nud.imsave('fusion_target_rgb', cam_img, subdir)
         # nud.imsave('fusion_target_top', top_img, subdir)
         self.summary_image(cam_img, scope_name+'/fusion_target_rgb', step=self.n_global_step)
         self.summary_image(top_img, scope_name+'/fusion_target_top', step=self.n_global_step)
+        self.summary_image(front_img, scope_name+'/fusion_target_front', step=self.n_global_step)
 
 
     def log_prediction(self, batch_top_view, batch_front_view, batch_rgb_images,
                        batch_gt_labels=None, batch_gt_boxes3d=None, print_iou=False,
                        log_rpn=False, step=None, scope_name=''):
-        print('fuck here log_predict')
         boxes3d, lables = self.predict(batch_top_view, batch_front_view, batch_rgb_images)
-        print('fuck predict fin')
         self.predict_log(self.log_subdir,log_rpn=log_rpn, step=step, scope_name=scope_name)
-        print('fuck predict_log fin')
 
         if type(batch_gt_boxes3d)==np.ndarray and type(batch_gt_labels)==np.ndarray:
             inds = np.where(batch_gt_labels[0]!=0)
@@ -650,7 +727,8 @@ class Trainer(MV3D):
 
             batch_size=1
 
-            validation_step=40
+            #FIXME
+            validation_step=20000000000
             ckpt_save_step=200
 
 
@@ -662,7 +740,7 @@ class Trainer(MV3D):
             self.log_msg.write('-------------------------------------------------------------------------------------\n')
 
 
-            for iter in range(max_iter):
+            for iter in range(1, max_iter):
 
 
                 is_validation = False
@@ -701,16 +779,15 @@ class Trainer(MV3D):
                     self.log_subdir = step_name + '/' + self.time_str
                     top_image = data.draw_top_image(self.batch_top_view[0])
                     self.top_image = self.top_image_padding(top_image)
+                    self.front_image = data.draw_front_image(self.batch_front_view[0])
 
 
                 # fit
-                print('fuck0')
                 t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss= \
                     self.fit_iteration(self.batch_rgb_images, self.batch_top_view, self.batch_front_view,
                                        self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
                                        is_validation =is_validation, summary_it=summary_it,
                                        summary_runmeta=summary_runmeta, log=log_this_iter)
-                print('fuck2')
 
                 if print_loss:
                     self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
@@ -718,6 +795,8 @@ class Trainer(MV3D):
 
                 if iter%ckpt_save_step==0:
                     self.save_weights(self.train_target)
+                    print('Save target at {}'.format(self.ckpt_dir))
+
 
 
                     if cfg.TRAINING_TIMER:
@@ -731,7 +810,11 @@ class Trainer(MV3D):
                 self.log_msg.write('It takes %0.2f secs to train the dataset. \n' % \
                                    (time_it.total_time()))
             self.save_progress()
-
+            self.save_weights(self.train_target)
+            print('Save target at {}'.format(self.ckpt_dir))
+            #save_path = os.path.join(cfg.LOG_DIR, 'train_progress')
+            #self.saver.save(sess, save_path + '/{}.ckpt'.format(strftime("%Y_%m_%d_%H_%M", localtime())))
+            #self.log_msg.write("model save at {}".format(save_path))
 
 
     def fit_iteration(self, batch_rgb_images, batch_top_view, batch_front_view,
@@ -754,15 +837,21 @@ class Trainer(MV3D):
         fd1 = {
             net['top_view']: batch_top_view,
             net['top_anchors']: self.top_view_anchors,
-            net['top_inside_inds']: self.anchors_inside_inds,
+            net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
 
             blocks.IS_TRAIN_PHASE: True,
             K.learning_phase(): 1
         }
+        # attention: this step include rpn stage NMS
         self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
             sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
 
-        ## generate  train rois  for RPN
+        ## rpn_target just judge if an anchor is a positive/negative/unused sample. 
+        ## And using random method to balance the amount of positive/negative sample.(Introduced in SSD)
+        ## Also cal batch_top_labels, batch_top_targets for cal rpn_loss.
+        ## attention that an anchor can be "unused" if it has no iou with any gt boxes.
+        # ATTENTION: Although here we just cal the "raw" anchor's delta with gt, but in MV3d_net, 
+        # when we use batch_top_labels and batch_top_target to cal the rpn loss, we also use delta cal by RPN(which is not exported).
         self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
@@ -771,11 +860,13 @@ class Trainer(MV3D):
             scope_name = '%s_iter_%06d' % (step_name, self.n_global_step - (self.n_global_step % self.iter_debug))
             self.log_rpn(step=self.n_global_step, scope_name=scope_name)
 
-
+        # In this step, it fuse the gt into proposal generated by RPN and set 2 limits for positive/negative sample(standard is also overlap)
+        # then retain the positive and negative samples.
+        # batch_fuse_targets is the 3b bbox delta between all the sample and 
         self.batch_top_rois, self.batch_fuse_labels, self.batch_fuse_targets = \
             fusion_target(self.batch_proposals, batch_gt_labels[0], self.batch_gt_top_boxes, batch_gt_boxes3d[0])
 
-        self.batch_rois3d = project_to_roi3d(self.batch_top_rois)
+        self.batch_rois3d = project_to_roi3d(self.batch_top_rois) # this just simply add height to the point(pre-defined height)
         self.batch_front_rois = project_to_front_roi(self.batch_rois3d)
         self.batch_rgb_rois = project_to_rgb_roi(self.batch_rois3d)
 
@@ -846,14 +937,37 @@ class Trainer(MV3D):
                 _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
                     sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss],
                              feed_dict=fd2)
-        print('fuck0.1')
         if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
                                     batch_gt_labels, batch_gt_boxes3d,
                                     step=self.n_global_step, scope_name=scope_name, print_iou=True)
-        print('fuck1')
         return t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss
 
+# predictor is used for testing
+class Tester_3DOP(MV3D):
+    def __init__(self, top_shape, front_shape, rgb_shape, weight_dir=None, log_tag=None, weights_tag=None):
+        #weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
+        self.weight_dir = weight_dir
+        MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag, weigths_dir=self.weight_dir)
+        self.variables_initializer()
+        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name])
+
+        tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
+        if os.path.isdir(tb_dir):
+            command = 'rm -rf %s' % tb_dir
+            print('\nClear old summary file: %s' % command)
+            os.system(command)
+        self.default_summary_writer = tf.summary.FileWriter(tb_dir)
+        self.n_log_scope = 0
+        self.n_max_log_per_scope= 10
 
 
+    def __call__(self, proposals, proposal_scores, top_view, front_view, rgb_image):
+        # input: (N, 7), (N, 1) ...
+        return self.predict_3dop(proposals, proposal_scores, top_view, front_view, rgb_image)
 
+    def dump_log(self,log_subdir, n_frame):
+        n_start = n_frame - (n_frame % (self.n_max_log_per_scope))
+        n_end = n_start + self.n_max_log_per_scope -1
 
+        scope_name = 'predict_%d_%d' % (n_start, n_end)
+        self.predict_log(log_subdir=log_subdir,log_rpn=True, step=n_frame,scope_name=scope_name)

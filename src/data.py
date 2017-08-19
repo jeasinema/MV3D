@@ -15,6 +15,8 @@ from multiprocessing import Pool
 from collections import OrderedDict
 import config
 import ctypes
+import math
+
 if config.cfg.USE_CLIDAR_TO_TOP:
     SharedLib = ctypes.cdll.LoadLibrary('/home/stu/MV3D/src/lidar_data_preprocess/'
                                         'Python_to_C_Interface/ver3/LidarTopPreprocess.so')
@@ -23,8 +25,10 @@ class Preprocess(object):
 
 
     def rgb(self, rgb):
-        rgb = crop_image(rgb)
-        return rgb
+        # FIXME
+        #rgb = crop_image(rgb)
+        #return rgb
+        return cv2.resize(rgb, (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)) #!!! order!!
 
 
     def bbox3d(self, obj):
@@ -47,6 +51,62 @@ class Preprocess(object):
 
         return top
 
+    def lidar_to_front(self, lidar):
+
+        def cal_height(point):
+            return np.clip(point[2] + cfg.VELODYNE_HEIGHT, a_min=0, a_max=None)
+        def cal_distance(point):
+            return math.sqrt(sum(np.array(point)**2))
+        def cal_intensity(point):
+            return point[3]
+        def to_front(point):
+            return (
+                int(math.atan2(point[1], point[0])/cfg.VELODYNE_ANGULAR_RESOLUTION),
+                int(math.atan2(point[2], math.sqrt(point[0]**2 + point[1]**2)) \
+                    /cfg.VELODYNE_VERTICAL_RESOLUTION)
+            )
+
+        # using the same crop method as top view
+        # idx = np.where (lidar[:,0]>TOP_X_MIN)
+        # lidar = lidar[idx]
+        # idx = np.where (lidar[:,0]<TOP_X_MAX)
+        # lidar = lidar[idx]
+
+        # idx = np.where (lidar[:,1]>TOP_Y_MIN)
+        # lidar = lidar[idx]
+        # idx = np.where (lidar[:,1]<TOP_Y_MAX)
+        # lidar = lidar[idx]
+
+        # idx = np.where (lidar[:,2]>TOP_Z_MIN)
+        # lidar = lidar[idx]
+        # idx = np.where (lidar[:,2]<TOP_Z_MAX)
+        # lidar = lidar[idx]
+
+        # width, height =  np.array(to_front([TOP_X_MIN, TOP_Y_MAX, TOP_Z_MAX])) - np.array(to_front([TOP_X_MIN, TOP_Y_MIN, TOP_Z_MIN]))
+
+        r, c = [], []
+        for point in lidar:
+            pc, pr = to_front(point)
+            c.append(pc)
+            r.append(pr)
+
+        c, r = np.array(c), np.array(r)
+        width = max(c) - min(c) + 1
+        height = max(r) - min(r) + 1
+        width = width if width > cfg.FRONT_WIDTH else cfg.FRONT_WIDTH
+        height = height if height > cfg.FRONT_HEIGHT else cfg.FRONT_HEIGHT
+        c -= min(c)
+        r -= min(r)
+
+        channel = 3 # height, distance, intencity
+        front = np.zeros((width, height, channel+1), dtype=np.float32)
+        for point, p_c, p_r in zip(lidar, c, r):
+            front[p_c, p_r, 0:channel] *= front[p_c, p_r, channel]
+            front[p_c, p_r, 0:channel] += np.array([cal_height(point), cal_distance(point), cal_intensity(point)])
+            front[p_c, p_r, channel] += 1
+            front[p_c, p_r, 0:channel] /= front[p_c, p_r, channel]
+
+        return front[0:cfg.FRONT_WIDTH, 0:cfg.FRONT_HEIGHT, 0:channel]
 
 proprocess = Preprocess()
 
@@ -77,13 +137,21 @@ def obj_to_gt_boxes3d(objs):
     return  gt_boxes3d, gt_labels
 
 def draw_top_image(lidar_top):
-    top_image = np.sum(lidar_top,axis=2)
+    top_image = np.sum(lidar_top,axis=2) # simply do sum on all the channel
     top_image = top_image-np.min(top_image)
     divisor = np.max(top_image)-np.min(top_image)
     top_image = (top_image/divisor*255)
     top_image = np.dstack((top_image, top_image, top_image)).astype(np.uint8)
     return top_image
 
+def draw_front_image(lidar_front):
+    # input: (cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3)
+    front_image = np.sum(lidar_front, axis=2)
+    front_image = front_image-np.min(front_image)
+    divisor = np.max(front_image) - np.min(front_image)
+    front_image = (front_image/divisor*255)
+    front_image = np.dstack((front_image, front_image, front_image)).astype(np.uint8)
+    return front_image
 
 def clidar_to_top(lidar):
     if (cfg.DATA_SETS_TYPE == 'didi' or cfg.DATA_SETS_TYPE == 'test'):
@@ -115,6 +183,7 @@ def clidar_to_top(lidar):
 
 
 ## lidar to top ##
+# density and intensity is right
 def lidar_to_top(lidar):
 
     idx = np.where (lidar[:,0]>TOP_X_MIN)

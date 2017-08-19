@@ -157,6 +157,7 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
     labels[max_overlaps >= CFG.TRAIN.RPN_FG_THRESH_LO] = 1   # fg label: above threshold IOU
 
 
+    # using the random sample pick method(introduced in SSD) for positive/negative sample balance
     # subsample positive labels
     num_fg = int(CFG.TRAIN.RPN_FG_FRACTION * CFG.TRAIN.RPN_BATCHSIZE)
     fg_inds = np.where(labels == 1)[0]

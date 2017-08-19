@@ -27,6 +27,9 @@ def rcnn_target(rois, gt_labels, gt_boxes, gt_boxes3d):
         np.ascontiguousarray(extended_rois[:,1:5], dtype=np.float),
         np.ascontiguousarray(gt_boxes, dtype=np.float)
     )
+    # overlaps is a N*K tensor, N is num of rois, K is num of gt_boxes
+    # which means the overlaps between rois and gt_boxes
+
     max_overlaps  = overlaps.max(axis=1)
     gt_assignment = overlaps.argmax(axis=1)
     labels        = gt_labels[gt_assignment]
@@ -76,7 +79,8 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     # Include "ground-truth" in the set of candidate rois
     rois = rois.reshape(-1,5)  # Proposal (i, x1, y1, x2, y2) coming from RPN
     num           = len(gt_boxes)
-    zeros         = np.zeros((num, 1), dtype=np.float32)
+    zeros         = np.zeros((num, 1), dtype=np.float32)   
+    
     extended_rois = np.vstack((rois, np.hstack((zeros, gt_boxes))))
     assert np.all(extended_rois[:, 0] == 0), 'Only single image batches are supported'
 
@@ -94,7 +98,14 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     labels        = gt_labels[gt_assignment]
 
     # Select foreground RoIs as those with >= FG_THRESH overlap
+    # very interesting, since in the beginning, RPN cannot generate good proposals, 
+    # so we have to fuse the gt into proposals. 
+    # But in fact, the official method for training faster-rcnn should be first individually trained the RPN, 
+    # here it just train the whole network end2end, so it choose this method.
     fg_inds = np.where(max_overlaps >= CFG.TRAIN.RCNN_FG_THRESH_LO)[0]
+    # !!! the commemted code below(which is not commented in rcnn_target) is for balancing the amount of positive and negative sample
+    # which is introduced in SSD
+
     # fg_rois_per_this_image = int(min(10, fg_inds.size))
     # if fg_inds.size > 0:
     #     fg_inds = np.random.choice(fg_inds, size=fg_rois_per_this_image, replace=False)
@@ -120,6 +131,7 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     targets = box3d_transform(et_boxes3d, gt_boxes3d)
     targets[np.where(labels == 0), :, :] = 0
 
+    # targets are the delta between gt_boxes3d and roi_boxes3d
     return rois, labels, targets
 
 def proprosal_to_top_rois(rois):

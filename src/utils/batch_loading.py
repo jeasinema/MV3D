@@ -26,6 +26,9 @@ import array
 import data
 from sklearn.utils import shuffle
 import threading
+from queue import Queue
+import scipy.io 
+from net.processing.boxes3d import *
 
 
 # disable print
@@ -308,7 +311,7 @@ class batch_loading:
                     continue
 
                 # modify gt_labels and gt_boxes3d values to be inside range.
-                # todo current support only batch_size == 1
+                # todo current support only batch_size == 1lo
                 train_gt_labels = np.zeros((1, batch_gt_labels_in_range.shape[0]), dtype=np.int32)
                 train_gt_boxes3d = np.zeros((1, batch_gt_labels_in_range.shape[0], 8, 3), dtype=np.float32)
                 train_gt_labels[0] = batch_gt_labels_in_range
@@ -339,7 +342,7 @@ use_thread = True
 
 class BatchLoading2:
 
-    def __init__(self, bags, tags, queue_size=20, require_shuffle=False,
+    def __init__(self, bags=[], tags=[], queue_size=20, require_shuffle=False,
                  require_log=False, is_testset=False):
         self.is_testset = is_testset
         self.shuffled = require_shuffle
@@ -418,6 +421,8 @@ class BatchLoading2:
     def preprocess_one_frame(self, rgb, lidar, obstacles):
         rgb = self.preprocess.rgb(rgb)
         top = self.preprocess.lidar_to_top(lidar)
+        front = self.preprocess.lidar_to_front(lidar)
+
         if self.is_testset:
             return rgb, top, None, None
         boxes3d = [self.preprocess.bbox3d(obs) for obs in obstacles]
@@ -436,10 +441,10 @@ class BatchLoading2:
         # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
         skip_frames = True
         while skip_frames:
-            fronts = []
+            #fronts = []
             frame_tag = self.tags[self.tag_index]
             obstacles, rgb, lidar = self.load_from_one_tag(frame_tag)
-            rgb, top, boxes3d, labels = self.preprocess_one_frame(rgb, lidar, obstacles)
+            rgb, top, boxes3d, labels, fronts = self.preprocess_one_frame(rgb, lidar, obstacles)
             if self.require_log and not self.is_testset:
                 draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
                 draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
@@ -539,6 +544,121 @@ class BatchLoading2:
     def get_frame_info(self):
         return self.tags[self.tag_index]
 
+# for non-raw dataset
+class Loading3DOP(object):
+
+    def __init__(self, object_dir='.', proposals_dir='.', queue_size=20, require_shuffle=False, is_testset=True):
+        self.object_dir, self.proposals_dir = object_dir, proposals_dir
+        self.is_testset, self.require_shuffle = is_testset, require_shuffle
+        
+        self.f_proposal = glob.glob(os.path.join(self.proposals_dir, '*_best.npy' if cfg.LOAD_BEST_PROPOSALS else '*_all.npy'))
+        self.f_proposal.sort()
+        self.f_rgb = glob.glob(os.path.join(self.object_dir, 'training', 'image_2', '*.png'))
+        self.f_rgb.sort()
+        self.f_lidar = glob.glob(os.path.join(self.object_dir, 'training', 'velodyne', '*.bin'))
+        self.f_lidar.sort()
+        assert(len(self.f_proposal) == len(self.f_rgb) == len(self.f_lidar))
+        print(len(self.f_proposal))
+        if self.require_shuffle:
+            index = shuffle([i for i in range(len(self.f_proposal))])
+            self.f_proposal = [self.f_proposal[i] for i in index]
+            self.f_rgb = [self.f_rgb[i] for i in index]
+            self.f_lidar = [self.f_lidar[i] for i in index]
+
+        self.queue_size = queue_size
+        self.require_shuffle = require_shuffle
+        self.preprocess = data.Preprocess()
+
+        self.rgb_queue, self.front_view_queue, self.top_view_queue = Queue(), Queue(), Queue()
+        self.proposals_queue, self.proposal_scores_queue = Queue(), Queue()
+
+        if not self.is_testset:
+            self.f_label = glob.glob(os.path.join(self.object_dir, 'training', 'label_2', '*.txt')).sort()
+            self.label_queue = Queue()
+
+        self.load_index = 0
+        self.fill_queue(self.queue_size)
+
+        # This operation is not thread-safe
+        try:
+            self.top_shape = self.top_view_queue.queue[0].shape
+            self.front_shape = self.front_view_queue.queue[0].shape 
+            self.rgb_shape = self.rgb_queue.queue[0].shape
+        except:
+            # FIXME
+            self.top_shape = (100, 100)
+            self.front_shape = (100, 100)
+            self.rgb_shape = (100, 100)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def fill_queue(self, load_amount=0):
+        def to_label(raw_labels):
+            # input: lines of label file
+            # return: [(str, (8, 3))]
+            ret = []
+            for line in raw_labels:
+                data = line.split()
+                obj_class = data[0]
+                # camera coordinate
+                h, w, l, x, y, z, ry = [float(i) for i in data[8:15]]
+                # lidar coordinate
+                h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry
+                ret.append((obj_class, box3d_compose((x, y, z), (h, w, l), (0, 0, rz))))
+            return ret
+
+        try:
+            for i in range(load_amount):
+                # input: (N, 8)
+                # print(self.load_index)
+                proposals = np.load(self.f_proposal[self.load_index])
+                while len(proposals) == 0: # seems that if feed in empty propsoal to model, it will stuck
+                    self.load_index += 1
+                    proposals = np.load(self.f_proposal[self.load_index])
+
+                self.proposals_queue.put(proposals[:, 0:7])
+                self.proposal_scores_queue.put(proposals[:, 7])
+                
+                self.rgb_queue.put(self.preprocess.rgb(cv2.imread(self.f_rgb[self.load_index])))
+                #self.rgb_queue.put(cv2.imread(self.f_rgb[self.load_index]))
+
+                raw_lidar = np.fromfile(self.f_lidar[self.load_index], dtype=np.float32).reshape((-1, 4))
+                self.top_view_queue.put(self.preprocess.lidar_to_top(raw_lidar))
+                self.front_view_queue.put(self.preprocess.lidar_to_front(raw_lidar))
+
+                if not self.is_testset:
+                    labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
+                    self.label_queue.put(to_label(labels))
+
+                self.load_index += 1
+        except:
+            pass
+
+    def load(self, batch_size=1):
+        try: 
+            if batch_size == 1: # currently only support batch_size == 1
+                ret = (self.proposals_queue.get_nowait(), self.proposal_scores_queue.get_nowait(),
+                       self.top_view_queue.get_nowait(), self.front_view_queue.get_nowait(),
+                       self.rgb_queue.get_nowait())
+            else:
+                ret = (np.array([self.proposals_queue.get_nowait() for i in range(batch_size)]),
+                      np.array([self.proposal_scores_queue.get_nowait() for i in range(batch_size)]),
+                      np.array([self.top_view_queue.get_nowait() for i in range(batch_size)]),
+                      np.array([self.front_view_queue.get_nowait() for i in range(batch_size)]),
+                      np.array([self.rgb_queue.get_nowait() for i in range(batch_size)]))
+            self.fill_queue(batch_size)
+        except:
+            ret = None 
+        return ret
+
+    def get_shape(self):
+        return self.top_shape, self.front_shape, self.rgb_shape
+
+
 class BatchLoading3:
 
     def __init__(self, bags={}, tags={}, queue_size=20, require_shuffle=False,
@@ -549,13 +669,14 @@ class BatchLoading3:
         self.raw_img = Image(tags)
         self.raw_tracklet = Tracklet(tags)
         self.raw_lidar = Lidar(tags)
+        self.tags = self.raw_lidar.get_tags()
+        assert(len(self.raw_img.get_tags()) == \
+               len(self.raw_lidar.get_tags()) == \
+               len(self.raw_tracklet.get_tags()))
 
         self.bags = bags
         # get all tags
-        self.tags = self.raw_lidar.get_tags()
-        assert(len(self.raw_lidar.get_tags()) == \
-               len(self.raw_tracklet.get_tags()) == \
-               len(self.raw_img.get_tags()))
+        # self.tags = tags
 
         if self.shuffled:
             self.tags = shuffle(self.tags)
@@ -623,11 +744,12 @@ class BatchLoading3:
     def preprocess_one_frame(self, rgb, lidar, obstacles):
         rgb = self.preprocess.rgb(rgb)
         top = self.preprocess.lidar_to_top(lidar)
+        front = self.preprocess.lidar_to_front(lidar)
         if self.is_testset:
             return rgb, top, None, None
         boxes3d = [self.preprocess.bbox3d(obs) for obs in obstacles]
         labels = [self.preprocess.label(obs) for obs in obstacles]
-        return rgb, top, boxes3d, labels
+        return rgb, top, boxes3d, labels, front
 
     def get_shape(self):
         train_rgbs, train_tops, train_fronts, train_gt_labels, train_gt_boxes3d, _ = self.load()
@@ -641,10 +763,10 @@ class BatchLoading3:
         # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
         skip_frames = True
         while skip_frames:
-            fronts = []
+            # fronts = []
             frame_tag = self.tags[self.tag_index]
             obstacles, rgb, lidar = self.load_from_one_tag(frame_tag)
-            rgb, top, boxes3d, labels = self.preprocess_one_frame(rgb, lidar, obstacles)
+            rgb, top, boxes3d, labels, fronts = self.preprocess_one_frame(rgb, lidar, obstacles)
             if self.require_log and not self.is_testset:
                 draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
                 draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
