@@ -235,7 +235,7 @@ class MV3D(object):
 
     def dump_weigths(self, dir):
         command = 'cp %s %s -r' % (self.ckpt_dir, dir)
-        os.system(command)
+        os.system(command) 
 
 
     def gc(self):
