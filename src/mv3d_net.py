@@ -22,6 +22,7 @@ from keras.layers import (
 
 top_view_rpn_name = 'top_view_rpn'
 imfeature_net_name = 'image_feature'
+frontfeature_net_name = 'front_feature'
 fusion_net_name = 'fusion'
 
 
@@ -371,9 +372,10 @@ def front_feature_net(input):
     stride=1.
     #with tf.variable_scope('top-preprocess') as scope:
     #    input = input
-    if not cfg.USE_FRONT:
-        return None, stride
     with tf.variable_scope('feature_extraction'):
+        if not cfg.USE_FRONT:
+            tmp = tf.Variable(tf.random_normal(shape=[1]), name='tmp') # since we have set saver for front_view subnet, it must contain at least 1 variable
+            return None, stride
         with tf.variable_scope('front-block-1') as scope:
             block = conv2d_bn_relu(input, num_kernels=32, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
             block = conv2d_bn_relu(block, num_kernels=32, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
@@ -411,10 +413,10 @@ def front_feature_net_r(input):
     #    input = input
     batch_size, img_height, img_width, img_channel = input.get_shape().as_list()
 
-    if not cfg.USE_FRONT:
-        return None, stride
-
     with tf.variable_scope('feature_extraction'):
+        if not cfg.USE_FRONT:
+            tmp = tf.Variable(tf.random_normal(shape=[1]), name='tmp') # since we have set saver for front_view subnet, it must contain at least 1 variable
+            return None, stride
         with tf.variable_scope('front-feature-extract-resnet') as scope:
             print('build_resnet')
             block = ResnetBuilder.resnet_tiny(input)
@@ -630,11 +632,11 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             top_targets = tf.placeholder(shape=[None, 4], dtype=tf.float32, name='top_target')
             top_cls_loss, top_reg_loss = rpn_loss(top_scores, top_deltas, top_inds, top_pos_inds,
                                                   top_labels, top_targets)
-    with tf.variable_scope('top_feature_only'):
-        if cfg.USE_RESNET_AS_TOP_BASENET==True:
-            top_features, top_feature_stride = top_feature_net_r_feature_only(top_view)
-        else:
-            top_features, top_feature_stride = top_feature_net_feature_only(top_view)
+    # with tf.variable_scope('top_feature_only'):
+    #     if cfg.USE_RESNET_AS_TOP_BASENET==True:
+    #         top_features, top_feature_stride = top_feature_net_r_feature_only(top_view)
+    #     else:
+    #         top_features, top_feature_stride = top_feature_net_feature_only(top_view)
 
 
     with tf.variable_scope(imfeature_net_name) as scope:
@@ -645,7 +647,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         elif cfg.RGB_BASENET =='VGG':
             rgb_features, rgb_stride = rgb_feature_net(rgb_images)
 
-    with tf.variable_scope('front_feature_net') as scope:
+    with tf.variable_scope(frontfeature_net_name) as scope:
         if cfg.USE_RESNET_AS_FRONT_BASENET:
             front_features, front_stride = front_feature_net_r(front_view)
         else:
