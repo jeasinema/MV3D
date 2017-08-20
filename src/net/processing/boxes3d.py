@@ -225,18 +225,19 @@ def draw_box3d_on_top(image, boxes3d,color=(255,255,255), thickness=1):
 
     return  img
 
-def draw_box3d_on_front(image, boxes3d, color=(255,255,255), thickness=5):
+def draw_box3d_on_front(image, boxes3d, color=(255,255,255), thickness=1):
     img = image.copy()
     for index in range(len(boxes3d)):
         projection = np.array([lidar_to_front_coords(*cor) for cor in boxes3d[index]])
         assert(len(projection) == 8)
-        c_min, c_max = min(projection[:, 0]), max(projection[:, 0])
-        r_min, r_max = min(projection[:, 1]), max(projection[:, 1])
+        c_min, c_max = int(min(projection[:, 0])), int(max(projection[:, 0]))
+        r_min, r_max = int(min(projection[:, 1])), int(max(projection[:, 1]))
         try:
-            cv2.line(img, (c_min, r_min), (c_min, r_max), color, thickness, cv2.LINE_AA)
-            cv2.line(img, (c_min, r_max), (c_max, r_max), color, thickness, cv2.LINE_AA)
-            cv2.line(img, (c_max, r_max), (c_max, r_min), color, thickness, cv2.LINE_AA)
-            cv2.line(img, (c_max, r_min), (c_min, r_min), color, thickness, cv2.LINE_AA)
+            # attention for coordiate order(r shoud be the first), and coordinate should be int
+            cv2.line(img, (r_min, c_min), (r_min, c_max), color, thickness, cv2.LINE_AA)
+            cv2.line(img, (r_min, c_max), (r_max, c_max), color, thickness, cv2.LINE_AA)
+            cv2.line(img, (r_max, c_max), (r_max, c_min), color, thickness, cv2.LINE_AA)
+            cv2.line(img, (r_max, c_min), (r_min, c_min), color, thickness, cv2.LINE_AA)
         except:
             pass
     return img

@@ -765,9 +765,9 @@ class Trainer(MV3D):
             self.log_msg.write('iter |  top_cls_loss   reg_loss   |  fuse_cls_loss  reg_loss  total |  \n')
             self.log_msg.write('-------------------------------------------------------------------------------------\n')
 
-
-            for iter in range(self.n_global_step, self.n_global_step+max_iter):
-                self.log_msg.write('Current epoch/Total epoch: {}/{}\n'.format(iter, self.n_global_step+max_iter))
+            init_step = self.n_global_step
+            for iter in range(init_step, init_step+max_iter):
+                self.log_msg.write('Current epoch/Total epoch: {}/{}\n'.format(iter, init_step+max_iter))
 
                 is_validation = False
                 summary_it = False
