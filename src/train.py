@@ -12,9 +12,9 @@ from utils.batch_loading import BatchLoading3
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training')
 
-    all= '%s,%s,%s' % (mv3d_net.top_view_rpn_name ,mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name)
+    all= '%s,%s,%s,%s' % (mv3d_net.top_view_rpn_name ,mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name)
 
-    parser.add_argument('-w', '--weights', type=str, nargs='?', default='',
+    parser.add_argument('-w', '--weights', type=str, nargs='?', default=all,  # FIXME
         help='use pre trained weights example: -w "%s" ' % (all))
 
     parser.add_argument('-t', '--targets', type=str, nargs='?', default=all,
@@ -26,14 +26,12 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--tag', type=str, nargs='?', default='unknown_tag',
                         help='set log tag')
 
-    parser.add_argument('-c', '--continue_train', type=bool, nargs='?', default=False,
+    parser.add_argument('-c', '--continue_train', action='store_true', default=False,
                         help='set continue train flag')
 
     parser.add_argument('-b', '--batch-size', type=int, nargs='?', default=1,
                         help='set continue train flag')
 
-    parser.add_argument('--continue-iter', type=int, nargs='?', default=0,
-                        help='set continue train iter')
 
     args = parser.parse_args()
 
@@ -116,7 +114,8 @@ if __name__ == '__main__':
     with BatchLoading3(tags=training_dataset, require_shuffle=True) as training:
       with BatchLoading3(tags=validation_dataset, require_shuffle=False) as validation:
 
+            
             train = mv3d.Trainer(train_set=training, validation_set=validation,
                                  pre_trained_weights=weights, train_targets=targets, log_tag=tag,
-                                 continue_train = args.continue_train, batch_size=args.batch_size, continue_iter=args.continue_iter)
+                                 continue_train = args.continue_train, batch_size=args.batch_size)
             train(max_iter=max_iter) 

@@ -122,36 +122,39 @@ class Net(object):
         self.subnet_checkpoint_name = scope_name
         os.makedirs(self.subnet_checkpoint_dir, exist_ok=True)
         self.variables = self.get_variables([prefix+'/'+scope_name])
-        self.saver=  tf.train.Saver(self.variables)
+        self.saver =  tf.train.Saver(self.variables)
 
 
-    def save_weights(self, sess=None, save_name='default'):
-        path = os.path.join(self.subnet_checkpoint_dir, self.subnet_checkpoint_name, save_name, save_name)
-        os.makedirs(path, exist_ok=True)
-        print('\nSave weigths : %s' % path)
-        self.saver.save(sess, path)
+    def save_weights(self, sess=None, step=0):
+        path = os.path.join(self.subnet_checkpoint_dir, self.subnet_checkpoint_name)
+        print('Save weigths for {}: {}-{}'.format(self.name, path, step))
+        self.saver.save(sess, path, global_step=step, write_meta_graph=True if step == 0 else False)
 
     def clean_weights(self):
         command = 'rm -rf %s' % (os.path.join(self.subnet_checkpoint_dir))
         subprocess.call(command, shell=True)
-        print('\nClean weights: %s' % command)
+        print('Clean weights: %s' % command)
         os.makedirs(self.subnet_checkpoint_dir ,exist_ok=True)
 
 
     def load_weights(self, sess=None):
-        path = os.path.join(self.subnet_checkpoint_dir, self.subnet_checkpoint_name)
-        if tf.train.checkpoint_exists(path) ==False:
-            print('\nCan not found :\n"%s",\nuse default weights instead it\n' % (path))
-            path = path.replace(os.path.basename(self.checkpoint_dir),'default')
+        path = os.path.join(self.subnet_checkpoint_dir)
+        # FIXME
+        if tf.train.checkpoint_exists(path) == False or not os.path.exists(os.path.join(path, 'checkpoint')):  # checkpoint_exist will return True if there is no file
+            print('Load weights failed for {} at {}, cannot find specified weights, using default initialzied val instead'.format(self.name, path))
+            return  # FIXME
+            #print('\nCan not found :\n"%s",\nuse default weights instead it\n' % (path))
+            # path = path.replace(os.path.basename(self.checkpoint_dir),'default')
         assert tf.train.checkpoint_exists(path) == True
-        self.saver.restore(sess, path)
+        self.saver.restore(sess, tf.train.latest_checkpoint(path))
+        print("Load weights for {} success! : {}".format(self.name, tf.train.latest_checkpoint(path)))
 
 
     def get_variables(self, scope_names):
         variables=[]
         for scope in scope_names:
             variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-            assert len(variables) != 0
+            # assert len(variables) != 0
             variables += variables
         return variables
 
@@ -196,9 +199,10 @@ class MV3D(object):
                             checkpoint_dir=self.ckpt_dir)
         self.subnet_imfeatrue = Net(prefix='MV3D', scope_name=mv3d_net.imfeature_net_name,
                                     checkpoint_dir=self.ckpt_dir)
+        self.subnet_frontfeature = Net(prefix='MV3D', scope_name=mv3d_net.frontfeature_net_name,
+                                    checkpoint_dir=self.ckpt_dir)
         self.subnet_fusion = Net(prefix='MV3D', scope_name=mv3d_net.fusion_net_name,
                                  checkpoint_dir=self.ckpt_dir)
-
 
         # set anchor boxes
         self.top_stride = self.net['top_feature_stride']
@@ -383,6 +387,9 @@ class MV3D(object):
             elif name == mv3d_net.imfeature_net_name:
                 self.subnet_imfeatrue.load_weights(self.sess)
 
+            elif name == mv3d_net.frontfeature_net_name:
+                self.subnet_frontfeature.load_weights(self.sess)
+
             else:
                 ValueError('unknow weigths name')
 
@@ -397,21 +404,27 @@ class MV3D(object):
             elif name == mv3d_net.imfeature_net_name:
                 self.subnet_imfeatrue.clean_weights()
 
+            elif name == mv3d_net.frontfeature_net_name:
+                self.subnet_frontfeature.clean_weights()
+
             else:
                 ValueError('unknow weigths name')
 
 
-    def save_weights(self, weights=[], save_name='default'):
+    def save_weights(self, weights=[], step=0):
         for name in weights:
             if name == mv3d_net.top_view_rpn_name:
-                self.subnet_rpn.save_weights(self.sess, save_name)
+                self.subnet_rpn.save_weights(self.sess, step)
 
             elif name == mv3d_net.fusion_net_name:
-                self.subnet_fusion.save_weights(self.sess, save_name)  
+                self.subnet_fusion.save_weights(self.sess, step)  
 
             elif name == mv3d_net.imfeature_net_name:
-                self.subnet_imfeatrue.save_weights(self.sess, save_name)
+                self.subnet_imfeatrue.save_weights(self.sess, step)
 
+            elif name == mv3d_net.frontfeature_net_name:
+                self.subnet_frontfeature.save_weights(self.sess, step)
+            
             else:
                 ValueError('unknow weigths name')
 
@@ -504,11 +517,11 @@ class MV3D(object):
 
 # predictor is used for testing
 class Predictor(MV3D):
-    def __init__(self, top_shape, front_shape, rgb_shape, log_tag=None, weights_tag=None):
+    def __init__(self, top_shape, front_shape, rgb_shape, log_tag=None, weights_tag=None, weight_name='default'):
         weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
         MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag, weigths_dir=weigths_dir)
         self.variables_initializer()
-        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name])
+        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
         tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
         if os.path.isdir(tb_dir):
@@ -536,20 +549,19 @@ class Predictor(MV3D):
 class Trainer(MV3D):
 
     def __init__(self, train_set, validation_set, pre_trained_weights, train_targets, log_tag=None,
-                 continue_train=False, batch_size=1, continue_iter=0):
+                 continue_train=False, batch_size=1):
         top_shape, front_shape, rgb_shape = train_set.get_shape()
         MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag)
         self.train_set = train_set
         self.validation_set = validation_set
         self.train_target= train_targets
         self.batch_size=batch_size
-        self.continue_iter=continue_iter
 
         self.train_summary_writer = None
         self.val_summary_writer = None
         self.tensorboard_dir = None
         self.summ = None
-        self.iter_debug = 50  #FIXME
+        self.iter_debug = 50  #FIXME this is log iter
         self.n_global_step = 0
 
         # saver
@@ -589,6 +601,9 @@ class Trainer(MV3D):
                     elif target == mv3d_net.imfeature_net_name:
                         train_var_list += self.subnet_imfeatrue.variables
 
+                    elif target == mv3d_net.frontfeature_net_name:
+                        train_var_list += self.subnet_frontfeature.variables
+
                     elif target == mv3d_net.fusion_net_name:
                         train_var_list += self.subnet_fusion.variables
                     else:
@@ -604,7 +619,7 @@ class Trainer(MV3D):
                 elif set([mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name]) == set(train_targets):
                     targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
-                elif set([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name])\
+                elif set([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])\
                         == set(train_targets):
                     targets_loss = 1. * (1. * self.top_cls_loss + 0.05 * self.top_reg_loss) + \
                                  1. * self.fuse_cls_loss + 0.1 * self.fuse_reg_loss
@@ -721,10 +736,10 @@ class Trainer(MV3D):
     def load_progress(self):
         path = os.path.join(cfg.LOG_DIR, 'train_progress', self.tag, 'progress.data')
         if os.path.isfile(path):
-            print('\nLoad progress !')
             self.n_global_step = pickle.load(open(path, 'rb'))
+            print('\nLoad progress success at {}!'.format(self.n_global_step))
         else:
-            print('\nCan not found progress file')
+            print('\nCan not found progress file!, start at {}'.format(self.n_global_step))
 
 
     def __call__(self, max_iter=1000, train_set =None, validation_set =None):
@@ -751,8 +766,8 @@ class Trainer(MV3D):
             self.log_msg.write('-------------------------------------------------------------------------------------\n')
 
 
-            for iter in range(self.continue_iter, max_iter):
-
+            for iter in range(self.n_global_step, self.n_global_step+max_iter):
+                self.log_msg.write('Current epoch/Total epoch: {}/{}\n'.format(iter, self.n_global_step+max_iter))
 
                 is_validation = False
                 summary_it = False
@@ -805,7 +820,7 @@ class Trainer(MV3D):
                                        (step_name, self.n_global_step, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss))
 
                 if iter%ckpt_save_step==0:
-                    self.save_weights(self.train_target, "{:06d}".format(iter))
+                    self.save_weights(self.train_target, iter)
                     print('Save target at {}'.format(self.ckpt_dir))
 
                     if cfg.TRAINING_TIMER:
@@ -819,7 +834,7 @@ class Trainer(MV3D):
                 self.log_msg.write('It takes %0.2f secs to train the dataset. \n' % \
                                    (time_it.total_time()))
             self.save_progress()
-            self.save_weights(self.train_target, 'final')
+            #self.save_weights(self.train_target, 'final')
             print('Save target at {}'.format(self.ckpt_dir))
             #save_path = os.path.join(cfg.LOG_DIR, 'train_progress')
             #self.saver.save(sess, save_path + '/{}.ckpt'.format(strftime("%Y_%m_%d_%H_%M", localtime())))
@@ -955,12 +970,12 @@ class Trainer(MV3D):
 
 # predictor is used for testing
 class Tester_3DOP(MV3D):
-    def __init__(self, top_shape, front_shape, rgb_shape, weight_dir=None, log_tag=None, weights_tag=None):
+    def __init__(self, top_shape, front_shape, rgb_shape, weight_dir=None, log_tag=None, weights_tag=None, weights_name='default'):
         #weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
         self.weight_dir = weight_dir
         MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag, weigths_dir=self.weight_dir)
         self.variables_initializer()
-        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name])
+        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
         tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
         if os.path.isdir(tb_dir):
