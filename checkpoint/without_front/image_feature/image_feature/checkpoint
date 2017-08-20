@@ -1,6 +1,0 @@
-model_checkpoint_path: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/without_front/image_feature/image_feature/009400"
-all_model_checkpoint_paths: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/without_front/image_feature/image_feature/008600"
-all_model_checkpoint_paths: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/without_front/image_feature/image_feature/008800"
-all_model_checkpoint_paths: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/without_front/image_feature/image_feature/009000"
-all_model_checkpoint_paths: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/without_front/image_feature/image_feature/009200"
-all_model_checkpoint_paths: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/without_front/image_feature/image_feature/009400"
