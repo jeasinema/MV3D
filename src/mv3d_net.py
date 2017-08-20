@@ -368,9 +368,81 @@ def rgb_feature_net_x(input):
 
 #------------------------------------------------------------------------------
 def front_feature_net(input):
-    # unimplemented
-    feature = None
-    return feature
+    stride=1.
+    #with tf.variable_scope('top-preprocess') as scope:
+    #    input = input
+    if not cfg.USE_FRONT:
+        return None, stride
+    with tf.variable_scope('feature_extraction'):
+        with tf.variable_scope('front-block-1') as scope:
+            block = conv2d_bn_relu(input, num_kernels=32, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=32, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
+            stride *=2
+
+        with tf.variable_scope('front-block-2') as scope:
+            block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
+            stride *=2
+
+        with tf.variable_scope('front-block-3') as scope:
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='3')
+            block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
+            stride *=2
+
+        with tf.variable_scope('front-block-4') as scope:
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='3')
+
+    #<todo> feature = upsample2d(block, factor = 4,  ...)
+    feature = block
+
+    print ('front: scale=%f, stride=%d'%(1./stride, stride))
+    return feature, stride
+
+
+def front_feature_net_r(input):
+    stride=1.
+    #with tf.variable_scope('top-preprocess') as scope:
+    #    input = input
+    batch_size, img_height, img_width, img_channel = input.get_shape().as_list()
+
+    if not cfg.USE_FRONT:
+        return None, stride
+
+    with tf.variable_scope('feature_extraction'):
+        with tf.variable_scope('front-feature-extract-resnet') as scope:
+            print('build_resnet')
+            block = ResnetBuilder.resnet_tiny(input)
+
+            # resnet_input = resnet.get_layer('input_1').input
+            # resnet_output = resnet.get_layer('add_7').output
+            # resnet_f = Model(inputs=resnet_input, outputs=resnet_output)  # add_7
+            # # print(resnet_f.summary())
+            # block = resnet_f(input)
+            block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(1, 1), stride=[1, 1, 1, 1], padding='SAME', name='2')
+            stride = 8
+
+    #<todo> feature = upsample2d(block, factor = 4,  ...)
+    feature = block
+
+    print ('front: scale=%f, stride=%d'%(1./stride, stride))
+    return feature, stride
+
+# def front_feature_net(input):
+#     batch_size, img_height, img_width, img_channel = input.get_shape().as_list()
+
+#     with tf.variable_scope('feature_extraction'):
+
+
+
+#     # unimplemented
+#     feature = None
+#     return feature
 
 # feature_list:
 # ( [top_features,     top_rois,     6,6,1./stride],
@@ -381,7 +453,7 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
 
     with tf.variable_scope('fuse-net') as scope:
         num = len(feature_list)
-        feature_names = ['top', 'front', 'rgb']
+        feature_names = ['top', 'front', 'rgb'] if cfg.USE_FRONT else ['top', 'rgb'] 
         roi_features_list = []
         for n in range(num):
             feature = feature_list[n][0]
@@ -539,7 +611,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     rgb_rois = tf.placeholder(shape=[None, 5], dtype=tf.float32, name='rgb_rois')
 
     #Naive implementattion using pointnet/conv3d for 2nd stage bbox regression
-    raw_lidar = tf.placeholder(shape=[None, 4], dtype=tf.float32, name='raw_lidar')
+    #raw_lidar = tf.placeholder(shape=[None, , 4], dtype=tf.float32, name='raw_lidar')
 
     with tf.variable_scope(top_view_rpn_name):
         # top feature
@@ -574,8 +646,10 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             rgb_features, rgb_stride = rgb_feature_net(rgb_images)
 
     with tf.variable_scope('front_feature_net') as scope:
-        front_features = front_feature_net(front_view)
-
+        if cfg.USE_RESNET_AS_FRONT_BASENET:
+            front_features, front_stride = front_feature_net_r(front_view)
+        else:
+            front_features, front_stride = front_feature_net(front_view)
     #debug roi pooling
     # with tf.variable_scope('after') as scope:
     #     roi_rgb, roi_idxs = tf_roipooling(rgb_images, rgb_rois, 100, 200, 1)
@@ -585,7 +659,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         if cfg.IMAGE_FUSION_DIABLE==True:
             fuse_output = fusion_net(
                     ([top_features, top_rois, 6, 6, 1. / top_feature_stride],
-                     [front_features, front_rois, 0, 0, 1. / stride],  # disable by 0,0
+                     [front_features, front_rois, 0, 0, 1. / front_stride],  # disable by 0,0
                      [rgb_features, rgb_rois*0, 6, 6, 1. / rgb_stride],),
                     num_class, out_shape)
             print('\n\n!!!! disable image fusion\n\n')
@@ -594,17 +668,23 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             # for test
             fuse_output = fusion_net(
                     ([top_features, top_rois*0, 6, 6, 1. / top_feature_stride],
-                     [front_features, front_rois, 0, 0, 1. / stride],  # disable by 0,0
+                     [front_features, front_rois, 0, 0, 1. / front_stride],  # disable by 0,0
                      [rgb_features, rgb_rois, 6, 6, 1. / rgb_stride],),
                     num_class, out_shape)
             print('\n\n!!!! disable top view fusion\n\n')
 
         else:
-            fuse_output = fusion_net(
+            if cfg.USE_FRONT:
+                fuse_output = fusion_net(
                     ([top_features, top_rois, 6, 6, 1. / top_feature_stride],
-                     [front_features, front_rois, 0, 0, 1. / stride],  # disable by 0,0
+                     [front_features, front_rois, 0, 0, 1. / front_stride],  # disable by 0,0
                      [rgb_features, rgb_rois, 6, 6, 1. / rgb_stride],),
                     num_class, out_shape)
+            else:
+               fuse_output = fusion_net(
+                    ([top_features, top_rois, 6, 6, 1. / top_feature_stride],
+                     [rgb_features, rgb_rois, 6, 6, 1. / rgb_stride],),
+                    num_class, out_shape) 
 
 
         # include background class

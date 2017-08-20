@@ -69,6 +69,7 @@ def top_feature_net(input, anchors, inds_inside, num_bases):
         up      = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
         scores  = conv2d(up, num_kernels=2*num_bases, kernel_size=(1,1), stride=[1,1,1,1], padding='SAME', name='score')
         probs   = tf.nn.softmax( tf.reshape(scores,[-1,2]), name='prob')
+        # this is the bbox regress step in RPN
         deltas  = conv2d(up, num_kernels=4*num_bases, kernel_size=(1,1), stride=[1,1,1,1], padding='SAME', name='delta')
 
     #<todo> flip to train and test mode nms (e.g. different nms_pre_topn values): use tf.cond

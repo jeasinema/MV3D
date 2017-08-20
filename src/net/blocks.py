@@ -292,11 +292,6 @@ def upsample2d(input, factor = 2, has_bias=True, trainable=True, name='upsample2
 
     return deconv
 
-
-
-
-
-
 ## basic blocks ## -------------------------------
 def conv2d_bn_relu(input, num_kernels=1, kernel_size=(1,1), stride=[1,1,1,1], padding='SAME', name='conv'):
     with tf.variable_scope(name) as scope:

@@ -67,46 +67,45 @@ class Preprocess(object):
             )
 
         # using the same crop method as top view
-        # idx = np.where (lidar[:,0]>TOP_X_MIN)
-        # lidar = lidar[idx]
-        # idx = np.where (lidar[:,0]<TOP_X_MAX)
-        # lidar = lidar[idx]
+        idx = np.where (lidar[:,0]>TOP_X_MIN)
+        lidar = lidar[idx]
+        idx = np.where (lidar[:,0]<TOP_X_MAX)
+        lidar = lidar[idx]
 
-        # idx = np.where (lidar[:,1]>TOP_Y_MIN)
-        # lidar = lidar[idx]
-        # idx = np.where (lidar[:,1]<TOP_Y_MAX)
-        # lidar = lidar[idx]
+        idx = np.where (lidar[:,1]>TOP_Y_MIN)
+        lidar = lidar[idx]
+        idx = np.where (lidar[:,1]<TOP_Y_MAX)
+        lidar = lidar[idx]
 
-        # idx = np.where (lidar[:,2]>TOP_Z_MIN)
-        # lidar = lidar[idx]
-        # idx = np.where (lidar[:,2]<TOP_Z_MAX)
-        # lidar = lidar[idx]
-
-        # width, height =  np.array(to_front([TOP_X_MIN, TOP_Y_MAX, TOP_Z_MAX])) - np.array(to_front([TOP_X_MIN, TOP_Y_MIN, TOP_Z_MIN]))
+        idx = np.where (lidar[:,2]>TOP_Z_MIN)
+        lidar = lidar[idx]
+        idx = np.where (lidar[:,2]<TOP_Z_MAX)
+        lidar = lidar[idx]
 
         r, c = [], []
         for point in lidar:
             pc, pr = to_front(point)
-            c.append(pc)
-            r.append(pr)
+            if cfg.FRONT_C_MIN < pc < cfg.FRONT_C_MAX and cfg.FRONT_R_MIN < pr < cfg.FRONT_R_MAX: 
+                c.append(pc)
+                r.append(pr)
+        c, r = np.array(c).astype(np.int32), np.array(r).astype(np.int32)
+        c += int(cfg.FRONT_C_OFFSET)
+        r += int(cfg.FRONT_R_OFFSET)
 
-        c, r = np.array(c), np.array(r)
-        width = max(c) - min(c) + 1
-        height = max(r) - min(r) + 1
-        width = width if width > cfg.FRONT_WIDTH else cfg.FRONT_WIDTH
-        height = height if height > cfg.FRONT_HEIGHT else cfg.FRONT_HEIGHT
-        c -= min(c)
-        r -= min(r)
+        ## FIXME simply /2 for resize
+        c //= 2
+        r //= 2
 
         channel = 3 # height, distance, intencity
-        front = np.zeros((width, height, channel+1), dtype=np.float32)
+        front = np.zeros((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, channel+1), dtype=np.float32)
         for point, p_c, p_r in zip(lidar, c, r):
-            front[p_c, p_r, 0:channel] *= front[p_c, p_r, channel]
-            front[p_c, p_r, 0:channel] += np.array([cal_height(point), cal_distance(point), cal_intensity(point)])
-            front[p_c, p_r, channel] += 1
-            front[p_c, p_r, 0:channel] /= front[p_c, p_r, channel]
+            if 0 <= p_c < cfg.FRONT_WIDTH and 0 <= p_r < cfg.FRONT_HEIGHT:
+                front[p_c, p_r, 0:channel] *= front[p_c, p_r, channel]
+                front[p_c, p_r, 0:channel] += np.array([cal_height(point), cal_distance(point), cal_intensity(point)])
+                front[p_c, p_r, channel] += 1
+                front[p_c, p_r, 0:channel] /= front[p_c, p_r, channel]
 
-        return front[0:cfg.FRONT_WIDTH, 0:cfg.FRONT_HEIGHT, 0:channel]
+        return front[:, :, 0:channel]
 
 proprocess = Preprocess()
 

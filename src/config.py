@@ -32,8 +32,16 @@ __C.LOAD_BEST_PROPOSALS=True
 __C.VELODYNE_ANGULAR_RESOLUTION=0.08/180*math.pi 
 __C.VELODYNE_VERTICAL_RESOLUTION=0.4/180*math.pi
 __C.VELODYNE_HEIGHT=1.73
-__C.FRONT_WIDTH=4500
-__C.FRONT_HEIGHT=70
+__C.FRONT_R_OFFSET=70
+__C.FRONT_C_OFFSET=750
+__C.FRONT_R_MAX=20
+__C.FRONT_R_MIN=-70
+__C.FRONT_C_MAX=750
+__C.FRONT_C_MIN=-750
+__C.FRONT_WIDTH=750
+__C.FRONT_HEIGHT=50
+__C.USE_FRONT=1
+__C.GPU_USE='0,1'
 
 #['didi2', 'didi','kitti','test']
 # 'didi2' means configuration for round 2, 'didi' means configuration for round 1 data, 'kitti' means for kitti dataset.
@@ -56,6 +64,7 @@ __C.CHECKPOINT_DIR=osp.join(__C.ROOT_DIR,'checkpoint')
 __C.LOG_DIR=osp.join(__C.ROOT_DIR,'log')
 
 __C.USE_RESNET_AS_TOP_BASENET = True
+__C.USE_RESNET_AS_FRONT_BASENET = True
 
 __C.IMAGE_FUSION_DIABLE = False
 __C.RGB_BASENET = 'VGG'  # 'resnet' 、'xception' 'VGG'

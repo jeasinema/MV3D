@@ -26,11 +26,15 @@ def lidar_to_top_coords(x,y,z=None):
     return xx,yy
 
 def lidar_to_front_coords(x, y, z):
-    return (
+    ret = [
         int(math.atan2(y, x)/cfg.VELODYNE_ANGULAR_RESOLUTION),
         int(math.atan2(z, math.sqrt(x**2 + y**2)) \
             /cfg.VELODYNE_VERTICAL_RESOLUTION)
-    )
+    ]
+    #clip to front view coordinate
+    ret[0] = (ret[0] + cfg.FRONT_C_OFFSET)/2
+    ret[1] = (ret[1] + cfg.FRONT_R_OFFSET)/2
+    return tuple(ret)
 
 def top_box_to_box3d(boxes):
 
@@ -43,7 +47,7 @@ def top_box_to_box3d(boxes):
         for k in range(4):
             xx,yy = points[k]
             x,y  = top_to_lidar_coords(xx,yy)
-            boxes3d[n,k,  :] = x,y, -2  ## <todo>
+            boxes3d[n,k,  :] = x,y, -2  ## <todo>  FIXME
             boxes3d[n,4+k,:] = x,y,0.4
 
     return boxes3d
@@ -221,18 +225,20 @@ def draw_box3d_on_top(image, boxes3d,color=(255,255,255), thickness=1):
 
     return  img
 
-def draw_box3d_on_front(image, boxes3d, color=(255,255,255), thickness=1):
+def draw_box3d_on_front(image, boxes3d, color=(255,255,255), thickness=5):
     img = image.copy()
     for index in range(len(boxes3d)):
-        projection = np.array([lidar_to_front_coords(cor) for cor in boxes3d[index]])
+        projection = np.array([lidar_to_front_coords(*cor) for cor in boxes3d[index]])
         assert(len(projection) == 8)
         c_min, c_max = min(projection[:, 0]), max(projection[:, 0])
         r_min, r_max = min(projection[:, 1]), max(projection[:, 1])
-        cv2.line(img, (c_min, r_min), (c_min, r_max), color, thickness, cv2.LINE_AA)
-        cv2.line(img, (c_min, r_max), (c_max, r_max), color, thickness, cv2.LINE_AA)
-        cv2.line(img, (c_max, r_max), (c_max, r_min), color, thickness, cv2.LINE_AA)
-        cv2.line(img, (c_max, r_min), (c_min, r_min), color, thickness, cv2.LINE_AA)
-
+        try:
+            cv2.line(img, (c_min, r_min), (c_min, r_max), color, thickness, cv2.LINE_AA)
+            cv2.line(img, (c_min, r_max), (c_max, r_max), color, thickness, cv2.LINE_AA)
+            cv2.line(img, (c_max, r_max), (c_max, r_min), color, thickness, cv2.LINE_AA)
+            cv2.line(img, (c_max, r_min), (c_min, r_min), color, thickness, cv2.LINE_AA)
+        except:
+            pass
     return img
 
 def draw_boxes(image, boxes, color=(0,255,255), thickness=1, darken=1.0):

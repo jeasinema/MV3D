@@ -551,7 +551,7 @@ class Loading3DOP(object):
         self.object_dir, self.proposals_dir = object_dir, proposals_dir
         self.is_testset, self.require_shuffle = is_testset, require_shuffle
         
-        self.f_proposal = glob.glob(os.path.join(self.proposals_dir, '*_best.npy' if cfg.LOAD_BEST_PROPOSALS else '*_all.npy'))
+        self.f_proposal = glob.glob(os.path.join(self.proposals_dir, 'best/*_best.npy' if cfg.LOAD_BEST_PROPOSALS else 'all/*_all.npy'))
         self.f_proposal.sort()
         self.f_rgb = glob.glob(os.path.join(self.object_dir, 'training', 'image_2', '*.png'))
         self.f_rgb.sort()
@@ -774,6 +774,7 @@ class BatchLoading3:
             self.tag_index += 1
 
             # reset self tag_index to 0 and shuffle tag list
+            # nice job, so just training for more interation
             if self.tag_index >= self.size:
                 self.tag_index = 0
                 if self.shuffled:

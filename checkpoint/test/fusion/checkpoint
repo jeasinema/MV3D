@@ -1,2 +1,0 @@
-model_checkpoint_path: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/test/fusion/fusion"
-all_model_checkpoint_paths: "/data/mxj/mxj/workspace_mxj/eval-kitti/MV3D/checkpoint/test/fusion/fusion"

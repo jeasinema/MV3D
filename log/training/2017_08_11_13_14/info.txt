@@ -1,3 +1,0 @@
-frame info: 2011_09_26/2011_09_26_drive_0057_sync/00108
-anchors: positive= 6 total= 256
-RPN proposals: positive= 4 total= 5

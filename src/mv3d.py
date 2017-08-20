@@ -89,11 +89,15 @@ def project_to_rgb_roi(rois3d):
 def project_to_front_roi(rois3d):
     # input: (N, 8, 3)
     def lidar_to_front(point):
-        return (
+        ret = [
             int(math.atan2(point[1], point[0])/cfg.VELODYNE_ANGULAR_RESOLUTION),
             int(math.atan2(point[2], math.sqrt(point[0]**2 + point[1]**2)) \
                 /cfg.VELODYNE_VERTICAL_RESOLUTION)
-        )
+        ]
+        #clip to front view coordinate
+        ret[0] = (ret[0] + cfg.FRONT_C_OFFSET)/2
+        ret[1] = (ret[1] + cfg.FRONT_R_OFFSET)/2
+        return tuple(ret)
     
     boxes = np.zeros((len(rois3d), 4), dtype=np.float32)
     batch_inds = np.zeros((len(rois3d), 1), dtype=np.float32)
@@ -121,8 +125,9 @@ class Net(object):
         self.saver=  tf.train.Saver(self.variables)
 
 
-    def save_weights(self, sess=None):
-        path = os.path.join(self.subnet_checkpoint_dir, self.subnet_checkpoint_name)
+    def save_weights(self, sess=None, save_name='default'):
+        path = os.path.join(self.subnet_checkpoint_dir, self.subnet_checkpoint_name, save_name, save_name)
+        os.makedirs(path, exist_ok=True)
         print('\nSave weigths : %s' % path)
         self.saver.save(sess, path)
 
@@ -174,7 +179,7 @@ class MV3D(object):
         self.log_msg = utilfile.Logger(cfg.LOG_DIR + '/log.txt', mode='a')
         self.track_log = utilfile.Logger(cfg.LOG_DIR + '/tracking_log.txt', mode='a')
 
-        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 0.5, visible_device_list='0,1')
+        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 0.5, visible_device_list=cfg.GPU_USE)
 
         # creat sesssion
         self.sess = tf.Session(config=tf.ConfigProto(
@@ -299,6 +304,8 @@ class MV3D(object):
         if len(self.rois3d) == 0:
             return np.zeros((0, 8, 3)), []
 
+        # need to make sure that the roi cannot exceed the bounding of target view
+        # -> no need, since roi_pooling op has done the boundary clip
         self.top_rois = project_to_top_roi(self.rois3d)  #(N, 5)  [:, 0] is batch_inds, always remains zero, see rpn_nms() in rpn_nms_op.py
         self.front_rois = project_to_front_roi(self.rois3d)  #(N, 5)
         self.rgb_rois = project_to_rgb_roi(self.rois3d)  #(N, 5)
@@ -394,16 +401,16 @@ class MV3D(object):
                 ValueError('unknow weigths name')
 
 
-    def save_weights(self, weights=[]):
+    def save_weights(self, weights=[], save_name='default'):
         for name in weights:
             if name == mv3d_net.top_view_rpn_name:
-                self.subnet_rpn.save_weights(self.sess)
+                self.subnet_rpn.save_weights(self.sess, save_name)
 
             elif name == mv3d_net.fusion_net_name:
-                self.subnet_fusion.save_weights(self.sess)  
+                self.subnet_fusion.save_weights(self.sess, save_name)  
 
             elif name == mv3d_net.imfeature_net_name:
-                self.subnet_imfeatrue.save_weights(self.sess)
+                self.subnet_imfeatrue.save_weights(self.sess, save_name)
 
             else:
                 ValueError('unknow weigths name')
@@ -429,22 +436,22 @@ class MV3D(object):
         if gt_top_boxes is not None:
             img_gt = draw_rpn_gt(top_image, gt_top_boxes, gt_labels)
             # nud.imsave('img_rpn_gt', img_gt, subdir)
-            self.summary_image(img_gt, scope_name + '/img_rpn_gt', step=step)
+            self.summary_image(img_gt, scope_name + '/img_rpn_gt', step=step)  #just RPN gt
 
         if top_inds is not None:
             img_label = draw_rpn_labels(top_image, self.top_view_anchors, top_inds, top_labels)
             # nud.imsave('img_rpn_label', img_label, subdir)
-            self.summary_image(img_label, scope_name+ '/img_rpn_label', step=step)
+            self.summary_image(img_label, scope_name+ '/img_rpn_label', step=step) #all the anchors and the gt label with dark blue
 
         if top_pos_inds is not None:
             img_target = draw_rpn_targets(top_image, self.top_view_anchors, top_pos_inds, top_targets)
             # nud.imsave('img_rpn_target', img_target, subdir)
-            self.summary_image(img_target, scope_name+ '/img_rpn_target', step=step)
+            self.summary_image(img_target, scope_name+ '/img_rpn_target', step=step) #show diff between gt and anchor, useless
 
         if proposals is not None:
             rpn_proposal = draw_rpn_proposal(top_image, proposals, proposal_scores, draw_num=20)
             # nud.imsave('img_rpn_proposal', rpn_proposal, subdir)
-            self.summary_image(rpn_proposal, scope_name + '/img_rpn_proposal',step=step)
+            self.summary_image(rpn_proposal, scope_name + '/img_rpn_proposal',step=step) # after nms, lighter color, higher score
 
 
 
@@ -529,12 +536,14 @@ class Predictor(MV3D):
 class Trainer(MV3D):
 
     def __init__(self, train_set, validation_set, pre_trained_weights, train_targets, log_tag=None,
-                 continue_train=False):
+                 continue_train=False, batch_size=1, continue_iter=0):
         top_shape, front_shape, rgb_shape = train_set.get_shape()
         MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag)
         self.train_set = train_set
         self.validation_set = validation_set
         self.train_target= train_targets
+        self.batch_size=batch_size
+        self.continue_iter=continue_iter
 
         self.train_summary_writer = None
         self.val_summary_writer = None
@@ -665,16 +674,17 @@ class Trainer(MV3D):
                                       self.batch_rgb_rois[np.where(self.batch_fuse_labels == 1), 1:5][0],
                                       color=(255, 255, 255), thickness=3)
         # nud.imsave('img_rgb_rois', img_rgb_rois, subdir)
-        self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step)
+        self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step) # draw fuse(gt and proposal) 2drois on rgb, bg(label==0) with blue and fg with white
+        # FIXME still get confused why the amount of white bboxes is evidently more than red 3d bboxes in fusion_target_xxx
 
         # labels, deltas, rois3d, top_img, cam_img, class_color
         top_img, cam_img, front_img = draw_fusion_target(self.batch_fuse_labels, self.batch_fuse_targets, self.batch_rois3d,
                                               top_image, rgb, front_image, [[10, 20, 10], [255, 0, 0]])
         # nud.imsave('fusion_target_rgb', cam_img, subdir)
         # nud.imsave('fusion_target_top', top_img, subdir)
-        self.summary_image(cam_img, scope_name+'/fusion_target_rgb', step=self.n_global_step)
+        self.summary_image(cam_img, scope_name+'/fusion_target_rgb', step=self.n_global_step) # draw fuse(gt and proposal) 3drois on tgb and top, with bg in black and fg in red
         self.summary_image(top_img, scope_name+'/fusion_target_top', step=self.n_global_step)
-        self.summary_image(front_img, scope_name+'/fusion_target_front', step=self.n_global_step)
+        self.summary_image(front_img.transpose((1, 0, 2))[::-1, ::-1, :], scope_name+'/fusion_target_front', step=self.n_global_step)  #FIXME(transpose and reverse)
 
 
     def log_prediction(self, batch_top_view, batch_front_view, batch_rgb_images,
@@ -728,8 +738,9 @@ class Trainer(MV3D):
             batch_size=1
 
             #FIXME
-            validation_step=20000000000
+            validation_step=200
             ckpt_save_step=200
+            summary_step=20
 
 
             if cfg.TRAINING_TIMER:
@@ -740,7 +751,7 @@ class Trainer(MV3D):
             self.log_msg.write('-------------------------------------------------------------------------------------\n')
 
 
-            for iter in range(1, max_iter):
+            for iter in range(self.continue_iter, max_iter):
 
 
                 is_validation = False
@@ -754,7 +765,7 @@ class Trainer(MV3D):
                 if (iter+1) % validation_step == 0:  summary_it,print_loss = True,True # summary train loss
                 if iter % 20 == 0: print_loss = True #print train loss
 
-                if 1 and  iter%300 == 0: summary_it,summary_runmeta = True,True
+                if 1 and  iter%summary_step == 0: summary_it,summary_runmeta = True,True
 
                 if iter % self.iter_debug == 0 or (iter + 1) % self.iter_debug == 0:
                     log_this_iter = True
@@ -794,10 +805,8 @@ class Trainer(MV3D):
                                        (step_name, self.n_global_step, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss))
 
                 if iter%ckpt_save_step==0:
-                    self.save_weights(self.train_target)
+                    self.save_weights(self.train_target, "{:06d}".format(iter))
                     print('Save target at {}'.format(self.ckpt_dir))
-
-
 
                     if cfg.TRAINING_TIMER:
                         self.log_msg.write('It takes %0.2f secs to train %d iterations. \n' % \
@@ -810,7 +819,7 @@ class Trainer(MV3D):
                 self.log_msg.write('It takes %0.2f secs to train the dataset. \n' % \
                                    (time_it.total_time()))
             self.save_progress()
-            self.save_weights(self.train_target)
+            self.save_weights(self.train_target, 'final')
             print('Save target at {}'.format(self.ckpt_dir))
             #save_path = os.path.join(cfg.LOG_DIR, 'train_progress')
             #self.saver.save(sess, save_path + '/{}.ckpt'.format(strftime("%Y_%m_%d_%H_%M", localtime())))
@@ -848,7 +857,7 @@ class Trainer(MV3D):
 
         ## rpn_target just judge if an anchor is a positive/negative/unused sample. 
         ## And using random method to balance the amount of positive/negative sample.(Introduced in SSD)
-        ## Also cal batch_top_labels, batch_top_targets for cal rpn_loss.
+        ## Also cal batch_top_labels, batch_top_targets(moving the bbox) for cal rpn_loss.
         ## attention that an anchor can be "unused" if it has no iou with any gt boxes.
         # ATTENTION: Although here we just cal the "raw" anchor's delta with gt, but in MV3d_net, 
         # when we use batch_top_labels and batch_top_target to cal the rpn loss, we also use delta cal by RPN(which is not exported).
@@ -866,6 +875,8 @@ class Trainer(MV3D):
         self.batch_top_rois, self.batch_fuse_labels, self.batch_fuse_targets = \
             fusion_target(self.batch_proposals, batch_gt_labels[0], self.batch_gt_top_boxes, batch_gt_boxes3d[0])
 
+        # need to make sure that the rois cannot exceed the bounding of target view
+        # -> no need, since roi_pooling op has done the boundary clip
         self.batch_rois3d = project_to_roi3d(self.batch_top_rois) # this just simply add height to the point(pre-defined height)
         self.batch_front_rois = project_to_front_roi(self.batch_rois3d)
         self.batch_rgb_rois = project_to_rgb_roi(self.batch_rois3d)
