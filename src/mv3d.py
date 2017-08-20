@@ -691,7 +691,7 @@ class Trainer(MV3D):
         # nud.imsave('img_rgb_rois', img_rgb_rois, subdir)
         self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step) # draw fuse(gt and proposal) 2drois on rgb, bg(label==0) with blue and fg with white
         # FIXME still get confused why the amount of white bboxes is evidently more than red 3d bboxes in fusion_target_xxx
-
+        
         # labels, deltas, rois3d, top_img, cam_img, class_color
         top_img, cam_img, front_img = draw_fusion_target(self.batch_fuse_labels, self.batch_fuse_targets, self.batch_rois3d,
                                               top_image, rgb, front_image, [[10, 20, 10], [255, 0, 0]])

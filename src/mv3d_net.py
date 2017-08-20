@@ -614,7 +614,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
     # naive implementation of using pointnet and 3dconv for bbox regress
     raw_lidar = tf.placeholder(shape=[None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='raw_lidar')
-    point_cloud_rois = tf.placeholdser(shape=[None, None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='point_cloud_rois')
+    point_cloud_rois = tf.placeholder(shape=[None, None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='point_cloud_rois')
     voxel_rois = tf.placeholder(shape=[None, None, cfg.VOXEL_ROI_L, cfg.VOXEL_ROI_W, cfg.VOXEL_ROI_H], dtype=tf.float32, name='voxel_rois')
 
     with tf.variable_scope(top_view_rpn_name):
