@@ -454,17 +454,17 @@ class MV3D(object):
         if top_inds is not None:
             img_label = draw_rpn_labels(top_image, self.top_view_anchors, top_inds, top_labels)
             # nud.imsave('img_rpn_label', img_label, subdir)
-            self.summary_image(img_label, scope_name+ '/img_rpn_label', step=step) #all the anchors and the gt label with dark blue
+            self.summary_image(img_label, scope_name+ '/img_rpn_label', step=step) # negative(gray) and positive(dark blue) samples(no delta) for RPN
 
         if top_pos_inds is not None:
             img_target = draw_rpn_targets(top_image, self.top_view_anchors, top_pos_inds, top_targets)
             # nud.imsave('img_rpn_target', img_target, subdir)
-            self.summary_image(img_target, scope_name+ '/img_rpn_target', step=step) #show diff between gt and anchor, useless
+            self.summary_image(img_target, scope_name+ '/img_rpn_target', step=step) #show diff between gt and positive sample(no delta) for RPN
 
         if proposals is not None:
             rpn_proposal = draw_rpn_proposal(top_image, proposals, proposal_scores, draw_num=20)
             # nud.imsave('img_rpn_proposal', rpn_proposal, subdir)
-            self.summary_image(rpn_proposal, scope_name + '/img_rpn_proposal',step=step) # after nms, lighter color, higher score
+            self.summary_image(rpn_proposal, scope_name + '/img_rpn_proposal',step=step) # just all the proposals. after nms, lighter color, higher score
 
 
 
@@ -689,15 +689,14 @@ class Trainer(MV3D):
         img_rgb_rois = box.draw_boxes(img_rgb_rois,
                                       self.batch_rgb_rois[np.where(self.batch_fuse_labels == 1), 1:5][0],
                                       color=(255, 255, 255), thickness=3)
-        # nud.imsave('img_rgb_rois', img_rgb_rois, subdir)
-        self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step) # draw fuse(gt and proposal) 2drois on rgb, bg(label==0) with blue and fg with white
-        # FIXME still get confused why the amount of white bboxes is evidently more than red 3d bboxes in fusion_target_xxx
+        # still get confused why the amount of white bboxes is evidently more than red 3d bboxes in fusion_target_xxx
+        # -> just because we apply deltas on proposals(so they stuck together)
 
         # labels, deltas, rois3d, top_img, cam_img, class_color
         top_img, cam_img, front_img = draw_fusion_target(self.batch_fuse_labels, self.batch_fuse_targets, self.batch_rois3d,
-                                              top_image, rgb, front_image, [[10, 20, 10], [255, 0, 0]])
-        # nud.imsave('fusion_target_rgb', cam_img, subdir)
-        # nud.imsave('fusion_target_top', top_img, subdir)
+                                              top_image, rgb, front_image, [[10, 20, 10], [0, 0, 255], [255, 0, 0]]) # negative sample, positive sample, gt(for 2nd stage)
+        # directly draw proposal details on image
+        self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step) # draw fuse(gt and proposal) 2drois on rgb, bg(label==0) with blue and fg with white
         self.summary_image(cam_img, scope_name+'/fusion_target_rgb', step=self.n_global_step) # draw fuse(gt and proposal) 3drois on tgb and top, with bg in black and fg in red
         self.summary_image(top_img, scope_name+'/fusion_target_top', step=self.n_global_step)
         self.summary_image(front_img.transpose((1, 0, 2))[::-1, ::-1, :], scope_name+'/fusion_target_front', step=self.n_global_step)  #FIXME(transpose and reverse)
