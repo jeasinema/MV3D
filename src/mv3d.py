@@ -203,7 +203,7 @@ class MV3D(object):
                                     checkpoint_dir=self.ckpt_dir)
         self.subnet_fusion = Net(prefix='MV3D', scope_name=mv3d_net.fusion_net_name,
                                  checkpoint_dir=self.ckpt_dir)
-
+ 
         # set anchor boxes
         self.top_stride = self.net['top_feature_stride']
         top_feature_shape = get_top_feature_shape(top_shape, self.top_stride)
@@ -212,7 +212,7 @@ class MV3D(object):
         self.anchors_inside_inds = np.arange(0, len(self.top_view_anchors), dtype=np.int32)  # use all  #<todo>
 
         self.log_subdir = None
-        self.top_image = None
+        self.top_image = None 
         self.front_image = None
         self.time_str = None
         self.frame_info =None
@@ -750,7 +750,7 @@ class Trainer(MV3D):
         with sess.as_default():
             #for init model
 
-            batch_size=1
+            #batch_size=1
 
             #FIXME
             validation_step=200
@@ -794,9 +794,16 @@ class Trainer(MV3D):
                 step_name = 'validation' if is_validation else 'training'
 
                 # load dataset
+                # data_buf = np.array([data_set.load() for _ in range(self.batch_size)]) 
+                # self.batch_rgb_images = data_buf[:, 0]
+                # self.batch_top_view = data_buf[:, 1]
+                # self.batch_front_view = data_buf[:, 2]
+                # self.batch_gt_labels = data_buf[:, 3]
+                # self.batch_gt_boxes3d = data_buf[:, 4]
+                # self.frame_id = data_buf[:, 5]
                 self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
                 self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
-                    data_set.load()
+                     data_set.load()
 
                 # fit_iterate log init
                 if log_this_iter:
@@ -876,6 +883,7 @@ class Trainer(MV3D):
         ## attention that an anchor can be "unused" if it has no iou with any gt boxes.
         # ATTENTION: Although here we just cal the "raw" anchor's delta with gt, but in MV3d_net, 
         # when we use batch_top_labels and batch_top_target to cal the rpn loss, we also use delta cal by RPN(which is not exported).
+        # self.top_view_anchors are generated offline by make_anchors, but its amount(50*50*9) is the same as delta/score generated in RPN(without nms)
         self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)

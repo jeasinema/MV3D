@@ -662,7 +662,7 @@ class Loading3DOP(object):
 class BatchLoading3:
 
     def __init__(self, bags={}, tags={}, queue_size=20, require_shuffle=False,
-                 require_log=False, is_testset=False):
+                 require_log=False, is_testset=False, batch_size=1):
         self.is_testset = is_testset
         self.shuffled = require_shuffle
         self.preprocess = data.Preprocess()
@@ -670,6 +670,7 @@ class BatchLoading3:
         self.raw_tracklet = Tracklet(tags)
         self.raw_lidar = Lidar(tags)
         self.tags = self.raw_lidar.get_tags()
+        self.batch_size = batch_size
         assert(len(self.raw_img.get_tags()) == \
                len(self.raw_lidar.get_tags()) == \
                len(self.raw_tracklet.get_tags()))
@@ -762,37 +763,46 @@ class BatchLoading3:
     def data_preprocessed(self):
         # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
         skip_frames = True
-        while skip_frames:
-            # fronts = []
-            frame_tag = self.tags[self.tag_index]
-            obstacles, rgb, lidar = self.load_from_one_tag(frame_tag)
-            rgb, top, boxes3d, labels, fronts = self.preprocess_one_frame(rgb, lidar, obstacles)
-            if self.require_log and not self.is_testset:
-                draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
-                draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
+        batch_rgb, batch_top, batch_fronts, batch_labels, batch_boxes3d, batch_frame_tag = [], [], [], [], [], []
+        for _ in range(self.batch_size):
+            while skip_frames:
+                # fronts = []
+                frame_tag = self.tags[self.tag_index]
+                obstacles, rgb, lidar = self.load_from_one_tag(frame_tag)
+                rgb, top, boxes3d, labels, fronts = self.preprocess_one_frame(rgb, lidar, obstacles)
+                if self.require_log and not self.is_testset:
+                    draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
+                    draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
 
-            self.tag_index += 1
+                self.tag_index += 1
 
-            # reset self tag_index to 0 and shuffle tag list
-            # nice job, so just training for more interation
-            if self.tag_index >= self.size:
-                self.tag_index = 0
-                if self.shuffled:
-                    self.tags = shuffle(self.tags)
-            skip_frames = False
+                # reset self tag_index to 0 and shuffle tag list
+                # nice job, so just training for more interation
+                if self.tag_index >= self.size:
+                    self.tag_index = 0
+                    if self.shuffled:
+                        self.tags = shuffle(self.tags)
+                skip_frames = False
 
-            # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
-            if not self.is_testset:
-                is_gt_inside_range, batch_gt_labels_in_range, batch_gt_boxes3d_in_range = \
-                    self.keep_gt_inside_range(labels, boxes3d)
-                labels = batch_gt_labels_in_range
-                boxes3d = batch_gt_boxes3d_in_range
-                # if no gt labels inside defined range, discard this training frame.
-                if not is_gt_inside_range:
-                    skip_frames = True
+                # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
+                if not self.is_testset:
+                    is_gt_inside_range, batch_gt_labels_in_range, batch_gt_boxes3d_in_range = \
+                        self.keep_gt_inside_range(labels, boxes3d)
+                    labels = batch_gt_labels_in_range
+                    boxes3d = batch_gt_boxes3d_in_range
+                    # if no gt labels inside defined range, discard this training frame.
+                    if not is_gt_inside_range:
+                        skip_frames = True
+            batch_rgb.append(rgb)
+            batch_top.append(top)
+            batch_fronts.append(fronts)
+            batch_labels.append(labels)
+            batch_boxes3d.append(boxes3d)
+            batch_frame_tag.append(frame_tag)
 
-        return np.array([rgb]), np.array([top]), np.array([fronts]), np.array([labels]), \
-               np.array([boxes3d]), frame_tag
+        # return np.array([rgb]), np.array([top]), np.array([fronts]), np.array([labels]), \
+        #        np.array([boxes3d]), frame_tag
+        return np.array(batch_rgb), np.array(batch_top), np.array(batch_fronts), np.array(batch_labels),np.array(batch_boxes3d), np.array(batch_frame_tag)
 
     def find_empty_block(self):
         idx = -1

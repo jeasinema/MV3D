@@ -16,7 +16,7 @@ from keras.layers import (
     Flatten,
     SeparableConv2D,
     Conv2D,
-    BatchNormalization,
+    BatchNormalization, 
     MaxPooling2D
     )
 
@@ -49,7 +49,7 @@ def top_feature_net(input, anchors, inds_inside, num_bases):
         block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
         block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
         block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
-        stride *=2
+        stride *=2 
 
     with tf.variable_scope('top-block-3') as scope:
         block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
