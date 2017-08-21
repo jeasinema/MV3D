@@ -85,15 +85,14 @@ def rcnn_nms( probs,  deltas,  rois3d,  score_threshold = 0.75,nms_threshold=0.0
 
 
 def draw_fusion_target(labels, deltas, rois3d, top_img, cam_img, front_img, class_color):
-    boxes3d  = box3d_transform_inv(rois3d, deltas)
+    #boxes3d  = box3d_transform_inv(rois3d, deltas)  # should not apply delta to rois3d
     boxes3d  = regularise_box3d(boxes3d)
-
 
     for i,label in enumerate(labels):
         color=class_color[label]
         top_img = draw_box3d_on_top(top_img,boxes3d[i:i+1,:,:], (color[0], color[1], color[2]))
         cam_img = draw_box3d_on_camera(cam_img, boxes3d[i:i+1,:,:], (color[0], color[1], color[2]))
-        front_img = draw_box3d_on_front(front_img,boxes3d[i:i+1,:,:], (255, 0, 0))  #FIXME
+        front_img = draw_box3d_on_front(front_img,boxes3d[i:i+1,:,:], (color[0], color[1], color[2]))  #FIXME
 
     return top_img, cam_img, front_img
 

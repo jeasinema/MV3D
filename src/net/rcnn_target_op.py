@@ -129,7 +129,7 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
 
     et_boxes3d = top_box_to_box3d(et_boxes)
     targets = box3d_transform(et_boxes3d, gt_boxes3d)
-    targets[np.where(labels == 0), :, :] = 0
+    targets[np.where(labels == 0), :, :] = 0  # negative sample's target is zero
 
     # targets are the delta between gt_boxes3d and roi_boxes3d
     return rois, labels, targets
