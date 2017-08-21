@@ -100,9 +100,9 @@ def draw_fusion_target(labels, deltas, rois3d, top_img, cam_img, front_img, clas
 
     for box in gt_boxes3d:
         color = class_color[2]  # FIXME support multi class
-        top_img = draw_box3d_on_top(top_img, box, (color[0], color[1], color[2]))
-        cam_img = draw_box3d_on_camera(cam_img, box, (color[0], color[1], color[2]))
-        front_img = draw_box3d_on_front(front_img, box, (color[0], color[1], color[2]))  #FIXME
+        top_img = draw_box3d_on_top(top_img, box[np.newaxis,:,:], (color[0], color[1], color[2]))
+        cam_img = draw_box3d_on_camera(cam_img, box[np.newaxis, :, :], (color[0], color[1], color[2]))
+        front_img = draw_box3d_on_front(front_img, box[np.newaxis, :, :], (color[0], color[1], color[2]))
 
     return top_img, cam_img, front_img
 

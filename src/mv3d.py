@@ -16,6 +16,7 @@ from net.rpn_nms_op     import draw_rpn_proposal
 from net.rcnn_nms_op    import rcnn_nms, draw_rcnn_nms, draw_rcnn,draw_box3d_on_image_with_gt,draw_fusion_target
 from net.rpn_target_op  import draw_rpn_gt, draw_rpn_targets, draw_rpn_labels
 from net.rcnn_target_op import draw_rcnn_targets, draw_rcnn_labels
+from net.utility.draw import draw_box3d_on_camera
 import net.utility.file as utilfile
 from config import cfg
 import config
@@ -333,7 +334,7 @@ class MV3D(object):
         return self.boxes3d, self.lables
 
 
-    def predict_log(self, log_subdir, log_rpn=False, step=None, scope_name=''):
+    def predict_log(self, log_subdir, log_rpn=False, step=None, scope_name='', gt_boxes3d=None):
         self.top_image = data.draw_top_image(self.top_view[0])
         self.top_image = self.top_image_padding(self.top_image)
         if log_rpn: self.log_rpn(step=step ,scope_name=scope_name)
@@ -344,10 +345,16 @@ class MV3D(object):
         new_size = (predict_camera_view.shape[1] // 2, predict_camera_view.shape[0] // 2)
         predict_camera_view = cv2.resize(predict_camera_view, new_size)
         # nud.imsave('predict_camera_view' , predict_camera_view, log_subdir)
-        self.summary_image(predict_camera_view, scope_name + '/predict_camera_view', step=step)
-
+   
         predict_top_view = data.draw_box3d_on_top(self.top_image, self.boxes3d)
+
+        # draw gt on camera and top view:
+        if gt_boxes3d:
+            predict_top_view = data.draw_box3d_on_top(predict_top_view, gt_boxes3d, color=(0, 0, 255))
+            predict_camera_view = draw_box3d_on_camera(predict_camera_view, gt_boxes3d, color=(0, 0, 255))
+
         # nud.imsave('predict_top_view' , predict_top_view, log_subdir)
+        self.summary_image(predict_camera_view, scope_name + '/predict_camera_view', step=step)
         self.summary_image(predict_top_view, scope_name + '/predict_top_view', step=step)
 
 
@@ -693,7 +700,7 @@ class Trainer(MV3D):
         # still get confused why the amount of white bboxes is evidently more than red 3d bboxes in fusion_target_xxx
         # -> just because we apply deltas on proposals(so they stuck together)
 
-        # labels, deltas, rois3d, top_img, cam_img, class_color
+          # labels, deltas, rois3d, top_img, cam_img, class_color
         top_img, cam_img, front_img = draw_fusion_target(self.batch_fuse_labels, self.batch_fuse_targets, self.batch_rois3d,
                                               top_image, rgb, front_image, [[10, 20, 10], [0, 0, 255], [255, 0, 0]]) # negative sample, positive sample, gt(for 2nd stage)
         front_img = front_img.transpose((1, 0, 2))[::-1, ::-1, :]
@@ -701,7 +708,7 @@ class Trainer(MV3D):
         # directly put anchor details on log image
         cv2.putText(cam_img, self.rpn_poposal_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
         cv2.putText(top_img, self.rpn_poposal_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
-        cv2.putText(front_img, self.rpn_poposal_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
+        # cv2.putText(front_img, self.rpn_poposal_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)  seem that is crash for type error...
 
         # directly draw proposal details on image
         self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step) # draw fuse(gt and proposal) 2drois on rgb, bg(label==0) with blue and fg with white
@@ -714,7 +721,7 @@ class Trainer(MV3D):
                        batch_gt_labels=None, batch_gt_boxes3d=None, print_iou=False,
                        log_rpn=False, step=None, scope_name=''):
         boxes3d, lables = self.predict(batch_top_view, batch_front_view, batch_rgb_images)
-        self.predict_log(self.log_subdir,log_rpn=log_rpn, step=step, scope_name=scope_name)
+        self.predict_log(self.log_subdir,log_rpn=log_rpn, step=step, scope_name=scope_name, gt_boxes3d=batch_gt_boxes3d[0])  # FIXME onlu support batch_size(batch size == 1)
 
         if type(batch_gt_boxes3d)==np.ndarray and type(batch_gt_labels)==np.ndarray:
             inds = np.where(batch_gt_labels[0]!=0)
@@ -972,7 +979,7 @@ class Trainer(MV3D):
                     sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss],
                              feed_dict=fd2)
         if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
-                                    batch_gt_labels, batch_gt_boxes3d,
+                                    batch_gt_labels, batch_gt_boxes3d, 
                                     step=self.n_global_step, scope_name=scope_name, print_iou=True)
         return t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss
 
