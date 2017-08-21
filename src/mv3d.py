@@ -334,7 +334,7 @@ class MV3D(object):
         return self.boxes3d, self.lables
 
 
-    def predict_log(self, log_subdir, log_rpn=False, step=None, scope_name='', gt_boxes3d=None):
+    def predict_log(self, log_subdir, log_rpn=False, step=None, scope_name='', gt_boxes3d=[]):
         self.top_image = data.draw_top_image(self.top_view[0])
         self.top_image = self.top_image_padding(self.top_image)
         if log_rpn: self.log_rpn(step=step ,scope_name=scope_name)
@@ -349,7 +349,7 @@ class MV3D(object):
         predict_top_view = data.draw_box3d_on_top(self.top_image, self.boxes3d)
 
         # draw gt on camera and top view:
-        if gt_boxes3d:
+        if len(gt_boxes3d) > 0: # array size > 1 cannot directly used in if
             predict_top_view = data.draw_box3d_on_top(predict_top_view, gt_boxes3d, color=(0, 0, 255))
             predict_camera_view = draw_box3d_on_camera(predict_camera_view, gt_boxes3d, color=(0, 0, 255))
 

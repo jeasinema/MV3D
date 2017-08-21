@@ -40,8 +40,8 @@ __C.FRONT_C_MAX=750
 __C.FRONT_C_MIN=-750
 __C.FRONT_WIDTH=750
 __C.FRONT_HEIGHT=50
-__C.USE_FRONT=0
-__C.GPU_USE='2,3'
+__C.USE_FRONT=1
+__C.GPU_USE='0,1'
 
 #['didi2', 'didi','kitti','test']
 # 'didi2' means configuration for round 2, 'didi' means configuration for round 1 data, 'kitti' means for kitti dataset.
