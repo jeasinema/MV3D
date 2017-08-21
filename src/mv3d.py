@@ -454,6 +454,7 @@ class MV3D(object):
         if top_inds is not None:
             img_label = draw_rpn_labels(top_image, self.top_view_anchors, top_inds, top_labels)
             # nud.imsave('img_rpn_label', img_label, subdir)
+            cv2.putText(img_label, self.anchors_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
             self.summary_image(img_label, scope_name+ '/img_rpn_label', step=step) # negative(gray) and positive(dark blue) samples(no delta) for RPN
 
         if top_pos_inds is not None:
@@ -695,11 +696,18 @@ class Trainer(MV3D):
         # labels, deltas, rois3d, top_img, cam_img, class_color
         top_img, cam_img, front_img = draw_fusion_target(self.batch_fuse_labels, self.batch_fuse_targets, self.batch_rois3d,
                                               top_image, rgb, front_image, [[10, 20, 10], [0, 0, 255], [255, 0, 0]]) # negative sample, positive sample, gt(for 2nd stage)
+        front_img = front_img.transpose((1, 0, 2))[::-1, ::-1, :]
+
+        # directly put anchor details on log image
+        cv2.putText(cam_img, self.rpn_poposal_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
+        cv2.putText(top_img, self.rpn_poposal_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
+        cv2.putText(front_img, self.rpn_poposal_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
+
         # directly draw proposal details on image
         self.summary_image(img_rgb_rois, scope_name+'/img_rgb_rois', step=self.n_global_step) # draw fuse(gt and proposal) 2drois on rgb, bg(label==0) with blue and fg with white
         self.summary_image(cam_img, scope_name+'/fusion_target_rgb', step=self.n_global_step) # draw fuse(gt and proposal) 3drois on tgb and top, with bg in black and fg in red
         self.summary_image(top_img, scope_name+'/fusion_target_top', step=self.n_global_step)
-        self.summary_image(front_img.transpose((1, 0, 2))[::-1, ::-1, :], scope_name+'/fusion_target_front', step=self.n_global_step)  #FIXME(transpose and reverse)
+        self.summary_image(front_img, scope_name+'/fusion_target_front', step=self.n_global_step)  #FIXME(transpose and reverse)
 
 
     def log_prediction(self, batch_top_view, batch_front_view, batch_rgb_images,
