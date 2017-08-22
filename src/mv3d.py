@@ -183,7 +183,7 @@ class MV3D(object):
         self.log_msg = utilfile.Logger(cfg.LOG_DIR + '/log.txt', mode='a')
         self.track_log = utilfile.Logger(cfg.LOG_DIR + '/tracking_log.txt', mode='a')
 
-        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 0.5, visible_device_list=cfg.GPU_USE)
+        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=cfg.GPU_MEMORY_FRACTION, visible_device_list=cfg.GPU_USE)
 
         # creat sesssion
         self.sess = tf.Session(config=tf.ConfigProto(
@@ -1001,10 +1001,6 @@ class Tester_3DOP(MV3D):
         self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
         tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
-        if os.path.isdir(tb_dir):
-            command = 'rm -rf %s' % tb_dir
-            print('\nClear old summary file: %s' % command)
-            os.system(command)
         self.default_summary_writer = tf.summary.FileWriter(tb_dir)
         self.n_log_scope = 0
         self.n_max_log_per_scope= 10
@@ -1020,3 +1016,57 @@ class Tester_3DOP(MV3D):
 
         scope_name = 'predict_%d_%d' % (n_start, n_end)
         self.predict_log(log_subdir=log_subdir,log_rpn=True, step=n_frame,scope_name=scope_name)
+
+# Test RPN
+class Tester_RPN(MV3D):
+    def __init__(self, top_shape, front_shape, rgb_shape, weight_dir=None, log_tag=None, weights_tag=None, weights_name='default'):
+        #weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
+        self.weight_dir = weight_dir
+        MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag, weigths_dir=self.weight_dir)
+        self.variables_initializer()
+        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
+
+        tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
+        self.default_summary_writer = tf.summary.FileWriter(tb_dir)
+        self.n_log_scope = 0
+        self.n_max_log_per_scope= 10
+
+
+    def __call__(self, top_view, front_view, rgb_image):
+        self.lables = []  # todo add lables output
+
+        self.top_view = top_view
+        self.rgb_image = rgb_image
+        self.front_view = front_view
+        fd1 = {
+            self.net['top_view']: self.top_view,
+            self.net['top_anchors']: self.top_view_anchors,
+            self.net['top_inside_inds']: self.anchors_inside_inds,
+            blocks.IS_TRAIN_PHASE: False,
+            K.learning_phase(): True
+        }
+
+        self.batch_proposals, self.batch_proposal_scores = \
+            self.sess.run([self.net['proposals'], self.net['proposal_scores']], fd1)
+        self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
+        self.top_rois = self.batch_proposals
+        if len(self.top_rois) == 0:
+            return np.zeros((0, 8, 3)), []
+
+        self.rois3d = project_to_roi3d(self.top_rois)
+        # Here we just use the pre-defined height to generate the z axis.
+        # In the origin paper, it is 1.45m, in this implementation is -2 and 0.5(2.5m)
+        self.front_rois = project_to_front_roi(self.rois3d)
+        self.rgb_rois = project_to_rgb_roi(self.rois3d)
+        return self.rois3d, self.rgb_rois, self.top_rois,  self.batch_proposal_scores
+
+    def dump_log(self,log_subdir, n_frame):
+        n_start = n_frame - (n_frame % (self.n_max_log_per_scope))
+        n_end = n_start + self.n_max_log_per_scope -1
+
+        scope_name = 'predict_%d_%d' % (n_start, n_end)
+        self.predict_log(log_subdir=log_subdir,log_rpn=True, step=n_frame,scope_name=scope_name)
+
+
+
+# Using Proposal generate by 3DOP
