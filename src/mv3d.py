@@ -183,7 +183,7 @@ class MV3D(object):
         self.log_msg = utilfile.Logger(cfg.LOG_DIR + '/log.txt', mode='a')
         self.track_log = utilfile.Logger(cfg.LOG_DIR + '/tracking_log.txt', mode='a')
 
-        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 0.5, visible_device_list=cfg.GPU_USE)
+        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=cfg.GPU_MEMORY_FRACTION, visible_device_list=cfg.GPU_USE)
 
         # creat sesssion
         self.sess = tf.Session(config=tf.ConfigProto(
@@ -204,7 +204,7 @@ class MV3D(object):
                                     checkpoint_dir=self.ckpt_dir)
         self.subnet_fusion = Net(prefix='MV3D', scope_name=mv3d_net.fusion_net_name,
                                  checkpoint_dir=self.ckpt_dir)
-
+ 
         # set anchor boxes
         self.top_stride = self.net['top_feature_stride']
         top_feature_shape = get_top_feature_shape(top_shape, self.top_stride)
@@ -213,7 +213,7 @@ class MV3D(object):
         self.anchors_inside_inds = np.arange(0, len(self.top_view_anchors), dtype=np.int32)  # use all  #<todo>
 
         self.log_subdir = None
-        self.top_image = None
+        self.top_image = None 
         self.front_image = None
         self.time_str = None
         self.frame_info =None
@@ -240,7 +240,7 @@ class MV3D(object):
 
     def dump_weigths(self, dir):
         command = 'cp %s %s -r' % (self.ckpt_dir, dir)
-        os.system(command)
+        os.system(command) 
 
 
     def gc(self):
@@ -764,7 +764,7 @@ class Trainer(MV3D):
         with sess.as_default():
             #for init model
 
-            batch_size=1
+            #batch_size=1
 
             #FIXME
             validation_step=200
@@ -808,9 +808,16 @@ class Trainer(MV3D):
                 step_name = 'validation' if is_validation else 'training'
 
                 # load dataset
+                # data_buf = np.array([data_set.load() for _ in range(self.batch_size)]) 
+                # self.batch_rgb_images = data_buf[:, 0]
+                # self.batch_top_view = data_buf[:, 1]
+                # self.batch_front_view = data_buf[:, 2]
+                # self.batch_gt_labels = data_buf[:, 3]
+                # self.batch_gt_boxes3d = data_buf[:, 4]
+                # self.frame_id = data_buf[:, 5]
                 self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
                 self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
-                    data_set.load()
+                     data_set.load()
 
                 # fit_iterate log init
                 if log_this_iter:
@@ -890,6 +897,7 @@ class Trainer(MV3D):
         ## attention that an anchor can be "unused" if it has no iou with any gt boxes.
         # ATTENTION: Although here we just cal the "raw" anchor's delta with gt, but in MV3d_net, 
         # when we use batch_top_labels and batch_top_target to cal the rpn loss, we also use delta cal by RPN(which is not exported).
+        # self.top_view_anchors are generated offline by make_anchors, but its amount(50*50*9) is the same as delta/score generated in RPN(without nms)
         self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
@@ -992,10 +1000,6 @@ class Tester_3DOP(MV3D):
         self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
         tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
-        if os.path.isdir(tb_dir):
-            command = 'rm -rf %s' % tb_dir
-            print('\nClear old summary file: %s' % command)
-            os.system(command)
         self.default_summary_writer = tf.summary.FileWriter(tb_dir)
         self.n_log_scope = 0
         self.n_max_log_per_scope= 10
@@ -1011,3 +1015,57 @@ class Tester_3DOP(MV3D):
 
         scope_name = 'predict_%d_%d' % (n_start, n_end)
         self.predict_log(log_subdir=log_subdir,log_rpn=True, step=n_frame,scope_name=scope_name)
+
+# Test RPN
+class Tester_RPN(MV3D):
+    def __init__(self, top_shape, front_shape, rgb_shape, weight_dir=None, log_tag=None, weights_tag=None, weights_name='default'):
+        #weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
+        self.weight_dir = weight_dir
+        MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag, weigths_dir=self.weight_dir)
+        self.variables_initializer()
+        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
+
+        tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
+        self.default_summary_writer = tf.summary.FileWriter(tb_dir)
+        self.n_log_scope = 0
+        self.n_max_log_per_scope= 10
+
+
+    def __call__(self, top_view, front_view, rgb_image):
+        self.lables = []  # todo add lables output
+
+        self.top_view = top_view
+        self.rgb_image = rgb_image
+        self.front_view = front_view
+        fd1 = {
+            self.net['top_view']: self.top_view,
+            self.net['top_anchors']: self.top_view_anchors,
+            self.net['top_inside_inds']: self.anchors_inside_inds,
+            blocks.IS_TRAIN_PHASE: False,
+            K.learning_phase(): True
+        }
+
+        self.batch_proposals, self.batch_proposal_scores = \
+            self.sess.run([self.net['proposals'], self.net['proposal_scores']], fd1)
+        self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
+        self.top_rois = self.batch_proposals
+        if len(self.top_rois) == 0:
+            return np.zeros((0, 8, 3)), []
+
+        self.rois3d = project_to_roi3d(self.top_rois)
+        # Here we just use the pre-defined height to generate the z axis.
+        # In the origin paper, it is 1.45m, in this implementation is -2 and 0.5(2.5m)
+        self.front_rois = project_to_front_roi(self.rois3d)
+        self.rgb_rois = project_to_rgb_roi(self.rois3d)
+        return self.rois3d, self.rgb_rois, self.top_rois,  self.batch_proposal_scores
+
+    def dump_log(self,log_subdir, n_frame):
+        n_start = n_frame - (n_frame % (self.n_max_log_per_scope))
+        n_end = n_start + self.n_max_log_per_scope -1
+
+        scope_name = 'predict_%d_%d' % (n_start, n_end)
+        self.predict_log(log_subdir=log_subdir,log_rpn=True, step=n_frame,scope_name=scope_name)
+
+
+
+# Using Proposal generate by 3DOP

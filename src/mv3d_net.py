@@ -16,7 +16,7 @@ from keras.layers import (
     Flatten,
     SeparableConv2D,
     Conv2D,
-    BatchNormalization,
+    BatchNormalization, 
     MaxPooling2D
     )
 
@@ -49,7 +49,7 @@ def top_feature_net(input, anchors, inds_inside, num_bases):
         block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
         block = conv2d_bn_relu(block, num_kernels=64, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
         block = maxpool(block, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
-        stride *=2
+        stride *=2 
 
     with tf.variable_scope('top-block-3') as scope:
         block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='1')
@@ -612,8 +612,10 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     front_rois = tf.placeholder(shape=[None, 5], dtype=tf.float32, name='front_rois')
     rgb_rois = tf.placeholder(shape=[None, 5], dtype=tf.float32, name='rgb_rois')
 
-    #Naive implementattion using pointnet/conv3d for 2nd stage bbox regression
-    #raw_lidar = tf.placeholder(shape=[None, , 4], dtype=tf.float32, name='raw_lidar')
+    # naive implementation of using pointnet and 3dconv for bbox regress
+    raw_lidar = tf.placeholder(shape=[None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='raw_lidar')
+    point_cloud_rois = tf.placeholder(shape=[None, None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='point_cloud_rois')
+    voxel_rois = tf.placeholder(shape=[None, None, cfg.VOXEL_ROI_L, cfg.VOXEL_ROI_W, cfg.VOXEL_ROI_H], dtype=tf.float32, name='voxel_rois')
 
     with tf.variable_scope(top_view_rpn_name):
         # top feature
