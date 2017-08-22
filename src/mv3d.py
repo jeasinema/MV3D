@@ -341,10 +341,6 @@ class MV3D(object):
         self.log_fusion_net_detail(log_subdir, self.fuse_probs, self.fuse_deltas)
         text_lables = ['No.%d class:1 prob: %.4f' % (i, prob) for i, prob in enumerate(self.probs)]
         predict_camera_view = nud.draw_box3d_on_camera(self.rgb_image[0], self.boxes3d, text_lables=text_lables)
-
-        new_size = (predict_camera_view.shape[1] // 2, predict_camera_view.shape[0] // 2)
-        predict_camera_view = cv2.resize(predict_camera_view, new_size)
-        # nud.imsave('predict_camera_view' , predict_camera_view, log_subdir)
    
         predict_top_view = data.draw_box3d_on_top(self.top_image, self.boxes3d)
 
@@ -353,6 +349,9 @@ class MV3D(object):
             predict_top_view = data.draw_box3d_on_top(predict_top_view, gt_boxes3d, color=(0, 0, 255))
             predict_camera_view = draw_box3d_on_camera(predict_camera_view, gt_boxes3d, color=(0, 0, 255))
 
+        new_size = (predict_camera_view.shape[1] // 2, predict_camera_view.shape[0] // 2)
+        predict_camera_view = cv2.resize(predict_camera_view, new_size)
+        # nud.imsave('predict_camera_view' , predict_camera_view, log_subdir)
         # nud.imsave('predict_top_view' , predict_top_view, log_subdir)
         self.summary_image(predict_camera_view, scope_name + '/predict_camera_view', step=step)
         self.summary_image(predict_top_view, scope_name + '/predict_top_view', step=step)
