@@ -82,12 +82,13 @@ class Preprocess(object):
         idx = np.where (lidar[:,2]<TOP_Z_MAX)
         lidar = lidar[idx]
 
-        r, c = [], []
+        r, c, l = [], [], []
         for point in lidar:
             pc, pr = to_front(point)
             if cfg.FRONT_C_MIN < pc < cfg.FRONT_C_MAX and cfg.FRONT_R_MIN < pr < cfg.FRONT_R_MAX: 
                 c.append(pc)
                 r.append(pr)
+                l.append(point)
         c, r = np.array(c).astype(np.int32), np.array(r).astype(np.int32)
         c += int(cfg.FRONT_C_OFFSET)
         r += int(cfg.FRONT_R_OFFSET)
@@ -98,7 +99,7 @@ class Preprocess(object):
 
         channel = 3 # height, distance, intencity
         front = np.zeros((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, channel+1), dtype=np.float32)
-        for point, p_c, p_r in zip(lidar, c, r):
+        for point, p_c, p_r in zip(l, c, r):
             if 0 <= p_c < cfg.FRONT_WIDTH and 0 <= p_r < cfg.FRONT_HEIGHT:
                 front[p_c, p_r, 0:channel] *= front[p_c, p_r, channel]
                 front[p_c, p_r, 0:channel] += np.array([cal_height(point), cal_distance(point), cal_intensity(point)])
