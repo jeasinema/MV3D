@@ -569,6 +569,7 @@ class Trainer(MV3D):
         self.tensorboard_dir = None
         self.summ = None
         self.n_global_step = 0
+        self.targets_loss = 0
 
         # saver
         self.saver = tf.train.Saver()
@@ -617,23 +618,23 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    targets_loss = 1. * self.top_cls_loss + 0.05 * self.top_reg_loss
+                    self.targets_loss += 1. * self.top_cls_loss + 0.05 * self.top_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name]) == set(train_targets):
-                    targets_loss = 1. * self.fuse_cls_loss + 0.05 * self.fuse_reg_loss
+                    self.targets_loss += 1. * self.fuse_cls_loss + 0.05 * self.fuse_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name]) == set(train_targets):
-                    targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
                 elif set([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])\
                         == set(train_targets):
-                    targets_loss = 1. * (1. * self.top_cls_loss + 0.05 * self.top_reg_loss) + \
+                    self.targets_loss += 1. * (1. * self.top_cls_loss + 0.05 * self.top_reg_loss) + \
                                  1. * self.fuse_cls_loss + 0.1 * self.fuse_reg_loss
                 else:
                     ValueError('unknow train_target set')
 
-                tf.summary.scalar('targets_loss', targets_loss)
-                self.solver_step = solver.minimize(loss = targets_loss,var_list=train_var_list)
+                tf.summary.scalar('targets_loss', self.targets_loss)
+                self.solver_step = solver.minimize(loss = self.targets_loss,var_list=train_var_list)
 
 
             # summary.FileWriter
@@ -788,6 +789,7 @@ class Trainer(MV3D):
                 summary_runmeta = False
                 print_loss = False
                 log_this_iter = False
+                do_optimize = False
 
                 # set fit flag
                 if iter % validation_step == 0:  summary_it,is_validation,print_loss = True,True,True # summary validation loss
@@ -829,12 +831,17 @@ class Trainer(MV3D):
                     self.front_image = data.draw_front_image(self.batch_front_view[0])
 
 
+                # minic batch_size
+                if iter%self.batch_size:
+                    do_optimize = True
+
                 # fit
                 t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss= \
                     self.fit_iteration(self.batch_rgb_images, self.batch_top_view, self.batch_front_view,
                                        self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
                                        is_validation =is_validation, summary_it=summary_it,
-                                       summary_runmeta=summary_runmeta, log=log_this_iter)
+                                       summary_runmeta=summary_runmeta, log=log_this_iter, do_optimize=do_optimize)
+
 
                 if print_loss:
                     self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
@@ -864,7 +871,7 @@ class Trainer(MV3D):
 
     def fit_iteration(self, batch_rgb_images, batch_top_view, batch_front_view,
                       batch_gt_labels, batch_gt_boxes3d, frame_id, is_validation =False,
-                      summary_it=False, summary_runmeta=False, log=False):
+                      summary_it=False, summary_runmeta=False, log=False, do_optimize=False):
 
         net = self.net
         sess = self.sess
@@ -967,24 +974,33 @@ class Trainer(MV3D):
                     run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                     run_metadata = tf.RunMetadata()
 
-                _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
-                    sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
+                if do_optimize:
+                    _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
+                        sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
                               self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+                    self.targets_loss = 0
+                else:
+                    t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
+                        sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
+                              self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+
                 self.train_summary_writer.add_summary(tb_sum_val, self.n_global_step)
-                print('added training  summary ')
+                print('added training summary ')
 
                 if summary_runmeta:
                     self.train_summary_writer.add_run_metadata(run_metadata, 'step%d' % self.n_global_step)
                     print('added runtime metadata.')
 
         else:
-            if is_validation:
+            if is_validation or not do_optimize:
                 t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
                     sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
             else:
                 _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
                     sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss],
                              feed_dict=fd2)
+                self.targets_loss = 0
+
         if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
                                     batch_gt_labels, batch_gt_boxes3d, 
                                     step=self.n_global_step, scope_name=scope_name, print_iou=True)

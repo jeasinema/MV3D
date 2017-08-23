@@ -1,11 +1,11 @@
-import mv3d
-import mv3d_net
+#import mv3d
+#import mv3d_net
 import glob
 from config import *
 import utils.batch_loading as ub
 import argparse
 import os
-from utils.training_validation_data_splitter import TrainingValDataSplitter
+#from utils.training_validation_data_splitter import TrainingValDataSplitter
 from utils.batch_loading import Loading3DOP, KittiLoading
 
 def test_3dop(args):
@@ -31,7 +31,7 @@ def test_rpn(args):
     os.makedirs(args.target_dir, exist_ok=True)
     test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
     data = testset.load()
-    count = 0
+    count = 1
     while data:
       print('Process {} data'.format(count))
       tag, rgb, _, top_view, front_view = data
@@ -47,8 +47,9 @@ def test_mv3d(args):
     with KittiLoading(object_dir='/data/mxj/kitti/object_3dop', queue_size=50, require_shuffle=False,
         is_testset=True, use_precal_view=True) as testset:
         os.makedirs(args.target_dir, exist_ok=True)
-        test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
+        #test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
         data = testset.load()
+
         count = 0
         while data:
             print('Process {} data'.format(count))

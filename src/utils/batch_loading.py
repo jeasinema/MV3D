@@ -653,8 +653,7 @@ class KittiLoading(object):
             label, rgb, raw_lidar, top_view, front_view, tag = [], [], [], [], [], []
             for _ in range(self.batch_size):
                 if self.is_testset and self.alreay_extract_data == self.dataset_size:
-                    ret = None
-                    break
+                    return None
                 
                 buff = self.dataset_queue.get()
                 label.append(buff[0])
@@ -693,6 +692,7 @@ class KittiLoading(object):
                 time.sleep(1)
             else:
                 self.fill_queue(self.queue_size - self.dataset_queue.qsize())
+        print('exit!')
 
 
     def get_shape(self):
