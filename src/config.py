@@ -41,7 +41,7 @@ __C.FRONT_C_MIN=-750
 __C.FRONT_WIDTH=750
 __C.FRONT_HEIGHT=50
 __C.USE_FRONT=0
-__C.GPU_USE='0,1'
+__C.GPU_USE='2,3'
 __C.GPU_MEMORY_FRACTION=0.5
 
 # for conv3d on bbox regress
@@ -49,6 +49,9 @@ __C.POINT_AMOUNT_LIMIT=100000
 __C.VOXEL_ROI_L=0 
 __C.VOXEL_ROI_W=0
 __C.VOXEL_ROI_H=0
+__C.USE_CONV3D=0
+__C_USE_POINTNET=0
+
 
 #['didi2', 'didi','kitti','test']
 # 'didi2' means configuration for round 2, 'didi' means configuration for round 1 data, 'kitti' means for kitti dataset.

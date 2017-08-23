@@ -1,12 +1,12 @@
-#import mv3d
-#import mv3d_net
+import mv3d
+import mv3d_net
 import glob
 from config import *
-#import utils.batch_loading as ub
+import utils.batch_loading as ub
 import argparse
 import os
-#from utils.training_validation_data_splitter import TrainingValDataSplitter
-#from utils.batch_loading import Loading3DOP, KittiLoading
+from utils.training_validation_data_splitter import TrainingValDataSplitter
+from utils.batch_loading import Loading3DOP, KittiLoading
 
 def test_3dop(args):
     # 3dop_proposal should be (N, 8) (7 for pos, 1 for objectness score)
@@ -20,14 +20,14 @@ def test_3dop(args):
         data = testset.load()
         print("Process {} data".format(count))
         boxes, labels = np.array(boxes), np.array(labels)
-        np.save(os.path.join('./tmp', str(count) + "_boxes.npy"), boxes)
-        np.save(os.path.join('./tmp', str(count) + "_labels.npy"), labels)
+        np.save(os.path.join(args.target_dir, str(count) + "_boxes.npy"), boxes)
+        np.save(os.path.join(args.target_dir, str(count) + "_labels.npy"), labels)
 
         count += 1
 
 def test_rpn(args):
   with KittiLoading(object_dir='/data/mxj/kitti/object_3dop', queue_size=50, require_shuffle=False,
-    is_testset=True) as testset:
+    is_testset=True, use_precal_view=True) as testset:
     os.makedirs(args.target_dir, exist_ok=True)
     test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
     data = testset.load()
@@ -42,6 +42,24 @@ def test_rpn(args):
 
       data = testset.load()
       count += 1
+
+def test_mv3d(args):
+    with KittiLoading(object_dir='/data/mxj/kitti/object_3dop', queue_size=50, require_shuffle=False,
+        is_testset=True, use_precal_view=True) as testset:
+        os.makedirs(args.target_dir, exist_ok=True)
+        test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
+        data = testset.load()
+        count = 0
+        while data:
+            print('Process {} data'.format(count))
+            tag, rgb, _, top_view, front_view = data 
+            boxes3d, labels, probs = test(top_view, front_view, rgb)
+            np.save(os.path.join(args.target_dir, '{}_boxes3d.npy'.format(tag[0])), boxes3d)
+            np.save(os.path.join(args.target_dir, '{}_labels.npy'.format(tag[0])), labels)        
+            np.save(os.path.join(args.target_dir, '{}_probs.npy'.format(tag[0])), probs)        
+
+            data = testset.load()
+            count += 1
 
 def test_front(args):
   pass
@@ -330,6 +348,8 @@ def test_lidar():
   #lidar_to_front(raw)
   lidar_to_top(raw)
 
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='testing')
 
@@ -343,9 +363,6 @@ if __name__ == '__main__':
 
     # test_3dop()
     # test_rpn(args)
-    count = 0
-    while True:
-        test_fast_lidar()
-        print(count)
-        count += 1
-    #test_lidar()
+    # test_lidar_fast()
+    # test_lidar()
+    test_mv3d(args)
