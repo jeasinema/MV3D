@@ -294,7 +294,7 @@ class MV3D(object):
             self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd2)
 
         self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=0.5)
-        return self.boxes3d, self.lables
+        return self.boxes3d, self.lables, self.probs
  
     # this is used for testing
     def predict_3dop(self, proposals, proposal_scores, top_view, front_view, rgb_image):
@@ -568,7 +568,6 @@ class Trainer(MV3D):
         self.val_summary_writer = None
         self.tensorboard_dir = None
         self.summ = None
-        self.iter_debug = 50  #FIXME this is log iter
         self.n_global_step = 0
 
         # saver
@@ -719,7 +718,7 @@ class Trainer(MV3D):
     def log_prediction(self, batch_top_view, batch_front_view, batch_rgb_images,
                        batch_gt_labels=None, batch_gt_boxes3d=None, print_iou=False,
                        log_rpn=False, step=None, scope_name=''):
-        boxes3d, lables = self.predict(batch_top_view, batch_front_view, batch_rgb_images)
+        boxes3d, lables, _ = self.predict(batch_top_view, batch_front_view, batch_rgb_images)
         self.predict_log(self.log_subdir,log_rpn=log_rpn, step=step, scope_name=scope_name, gt_boxes3d=batch_gt_boxes3d[0])  # FIXME onlu support batch_size(batch size == 1)
 
         if type(batch_gt_boxes3d)==np.ndarray and type(batch_gt_labels)==np.ndarray:
@@ -767,9 +766,10 @@ class Trainer(MV3D):
             #batch_size=1
 
             #FIXME
-            validation_step=200
-            ckpt_save_step=200
-            summary_step=20  # this is freq for print loss
+            validation_step=500
+            ckpt_save_step=1000
+            self.iter_debug=500  #FIXME this is log iter
+            summary_step=200  # this is freq for print loss
 
 
             if cfg.TRAINING_TIMER:

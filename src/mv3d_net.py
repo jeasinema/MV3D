@@ -24,6 +24,7 @@ top_view_rpn_name = 'top_view_rpn'
 imfeature_net_name = 'image_feature'
 frontfeature_net_name = 'front_feature'
 fusion_net_name = 'fusion'
+conv3d_net_name = 'conv3d_for_regress'
 
 
 def top_feature_net(input, anchors, inds_inside, num_bases):
@@ -617,6 +618,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     point_cloud_rois = tf.placeholder(shape=[None, None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='point_cloud_rois')
     voxel_rois = tf.placeholder(shape=[None, None, cfg.VOXEL_ROI_L, cfg.VOXEL_ROI_W, cfg.VOXEL_ROI_H], dtype=tf.float32, name='voxel_rois')
 
+
     with tf.variable_scope(top_view_rpn_name):
         # top feature
         if cfg.USE_RESNET_AS_TOP_BASENET==True:
@@ -707,6 +709,22 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             # in this implementation, it does not do NMS at final step, so the only NMS is done before fusenet(using score from PRN)
             # no, the line above is not correct, just see function 'predict' in mv3d.py, it does nms at final step.
             fuse_cls_loss, fuse_reg_loss = fuse_loss(fuse_scores, fuse_deltas, fuse_labels, fuse_targets)
+
+    # with tf.variable_scope(conv3d_net_name) as scope:
+    #     if cfg.USE_CONV3D:
+    #         conv3d_output = conv3d_for_bbox_regress(
+
+    #         )
+    #     elif cfg.USE_POINTNET:
+    #         conv3d_output = pointnet_for_bbox_regress(
+
+    #         )
+
+    #     with tf.variable_scope('predict') as scope:
+            
+
+    #     with tf.variable_scope('loss') as scope:
+
 
 
     return {

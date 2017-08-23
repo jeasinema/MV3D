@@ -546,15 +546,19 @@ class BatchLoading2:
 # for non-raw dataset
 class KittiLoading(object):
 
-    def __init__(self, object_dir='.', queue_size=20, require_shuffle=False, is_testset=True, batch_size=1):
+    def __init__(self, object_dir='.', queue_size=20, require_shuffle=False, is_testset=True, batch_size=1, use_precal_view=False):
         self.object_dir = object_dir
-        self.is_testset, self.require_shuffle = is_testset, require_shuffle
+        self.is_testset, self.require_shuffle, self.use_precal_view = is_testset, require_shuffle, use_precal_view
         self.batch_size=batch_size
         
         self.f_rgb = glob.glob(os.path.join(self.object_dir, 'training', 'image_2', '*.png'))
         self.f_rgb.sort()
         self.f_lidar = glob.glob(os.path.join(self.object_dir, 'training', 'velodyne', '*.bin'))
         self.f_lidar.sort()
+        self.f_top = glob.glob(os.path.join(self.object_dir, 'training', 'top_view', '*.npy'))
+        self.f_top.sort()
+        self.f_front = glob.glob(os.path.join(self.object_dir, 'training', 'front_view', '*.npy'))
+        self.f_front.sort()
         self.f_label = glob.glob(os.path.join(self.object_dir, 'training', 'label_2', '*.txt'))
         self.f_label.sort()
         self.data_tag =  [name.split('/')[-1].split('.')[-2] for name in self.f_label]
@@ -617,21 +621,27 @@ class KittiLoading(object):
             try:
                 rgb = self.preprocess.rgb(cv2.imread(self.f_rgb[self.load_index]))
                 raw_lidar = np.fromfile(self.f_lidar[self.load_index], dtype=np.float32).reshape((-1, 4))
-                top_view = self.preprocess.lidar_to_top(raw_lidar)
+                if self.use_precal_view:
+                    top_view = np.load(self.f_top[self.load_index])
+                    front_view = np.load(self.f_front[self.load_index])
+                else: 
+                    top_view = self.preprocess.lidar_to_top(raw_lidar)
                 # top_view = np.ones((400, 400, 10), dtype=np.float32)
-                # front_view = self.preprocess.lidar_to_front_fast(raw_lidar)
-                front_view = np.ones((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3), dtype=np.float32)
+                    front_view = self.preprocess.lidar_to_front_fast(raw_lidar)
+                # front_view = np.ones((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3), dtype=np.float32)
                 labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
                 tag = self.data_tag[self.load_index]
 
                 self.dataset_queue.put_nowait((labels, rgb, raw_lidar, top_view, front_view, tag))
                 self.load_index += 1
-                # print("Fill {}".format(self.load_index))
+                print("Fill {}".format(self.load_index))
             except:
                 if not self.is_testset:  # test set just end
                     self.load_index = 0
                     if self.require_shuffle:
                         self.shuffle_dataset()
+                else:
+                    self.work_exit = True
 
     def load(self):
         # output:
@@ -683,6 +693,7 @@ class KittiLoading(object):
                 time.sleep(1)
             else:
                 self.fill_queue(self.queue_size - self.dataset_queue.qsize())
+
 
     def get_shape(self):
         return self.top_shape, self.front_shape, self.rgb_shape
@@ -812,8 +823,9 @@ class Loading3DOP(object):
 class BatchLoading3:
 
     def __init__(self, bags={}, tags={}, queue_size=20, require_shuffle=False,
-                 require_log=False, is_testset=False, batch_size=1):
+                 require_log=False, is_testset=False, batch_size=1, use_precal_view=False):
         self.is_testset = is_testset
+        self.use_precal_view = use_precal_view
         self.shuffled = require_shuffle
         self.preprocess = data.Preprocess()
         self.raw_img = Image(tags)
@@ -892,10 +904,14 @@ class BatchLoading3:
         return obstacles, rgb, lidar
 
 
-    def preprocess_one_frame(self, rgb, lidar, obstacles):
+    def preprocess_one_frame(self, rgb, lidar, obstacles, tag):
         rgb = self.preprocess.rgb(rgb)
-        top = self.preprocess.lidar_to_top(lidar)
-        front = self.preprocess.lidar_to_front_fast(lidar)
+        if self.use_precal_view:
+            top = np.load(os.path.join(cfg.RAW_DATA_SETS_DIR, 'top_view', tag + '.npy'))
+            front = np.load(os.path.join(cfg.RAW_DATA_SETS_DIR, 'front_view', tag + '.npy'))
+        else:
+            top = self.preprocess.lidar_to_top(lidar)
+            front = self.preprocess.lidar_to_front_fast(lidar)
         if self.is_testset:
             return rgb, top, None, None
         boxes3d = [self.preprocess.bbox3d(obs) for obs in obstacles]
@@ -919,7 +935,7 @@ class BatchLoading3:
                 # fronts = []
                 frame_tag = self.tags[self.tag_index]
                 obstacles, rgb, lidar = self.load_from_one_tag(frame_tag)
-                rgb, top, boxes3d, labels, fronts = self.preprocess_one_frame(rgb, lidar, obstacles)
+                rgb, top, boxes3d, labels, fronts = self.preprocess_one_frame(rgb, lidar, obstacles, frame_tag)
                 if self.require_log and not self.is_testset:
                     draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
                     draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
