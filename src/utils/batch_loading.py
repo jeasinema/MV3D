@@ -580,7 +580,7 @@ class KittiLoading(object):
 
         # This operation is not thread-safe
         try:
-            tmp = self.dataset_queue.get()
+            tmp = self.dataset_queue.queue[0]
             self.top_shape = tmp[3].shape
             self.front_shape = tmp[4].shape
             self.rgb_shape = tmp[1].shape
@@ -591,7 +591,7 @@ class KittiLoading(object):
             self.rgb_shape = (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT, 3)
 
         self.loader_worker = threading.Thread(target=self.loader_worker_main)
-        #self.loader_worker = Process(target=self.loader_worker_main)  don't use it, since loader is slower than NN
+        #self.loader_worker = Process(target=self.loader_worker_main)  # don't use it, since loader is slower than NN
         self.work_exit = False
         self.loader_worker.start()
 
@@ -634,7 +634,7 @@ class KittiLoading(object):
 
                 self.dataset_queue.put_nowait((labels, rgb, raw_lidar, top_view, front_view, tag))
                 self.load_index += 1
-                print("Fill {}".format(self.load_index))
+                #print("Fill {}, now size:{}".format(self.load_index, self.dataset_queue.qsize()))
             except:
                 if not self.is_testset:  # test set just end
                     self.load_index = 0
@@ -652,6 +652,7 @@ class KittiLoading(object):
         try: 
             label, rgb, raw_lidar, top_view, front_view, tag = [], [], [], [], [], []
             for _ in range(self.batch_size):
+                #print("Queue size when load: {}, already extract:{}".format(self.dataset_queue.qsize(), self.alreay_extract_data))
                 if self.is_testset and self.alreay_extract_data == self.dataset_size:
                     return None
                 
@@ -692,7 +693,7 @@ class KittiLoading(object):
                 time.sleep(1)
             else:
                 self.fill_queue(self.queue_size - self.dataset_queue.qsize())
-        print('exit!')
+        #print('exit!, current size:{}'.format(self.dataset_queue.qsize()))
 
 
     def get_shape(self):

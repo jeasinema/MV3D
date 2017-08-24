@@ -52,7 +52,7 @@ def test_mv3d(args):
         #test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
         data = testset.load()
 
-        count = 0
+        count = 1
         while data:
             print('Process {} data'.format(count))
             tag, rgb, _, top_view, front_view = data 
