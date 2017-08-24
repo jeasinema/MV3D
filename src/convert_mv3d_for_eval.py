@@ -3,6 +3,7 @@
 
 import glob
 import numpy as np 
+import math
 import os 
 from config import *
 from multiprocessing import Pool
@@ -10,6 +11,8 @@ import data
 import cv2
 
 import net.utility.draw as nud
+import net.processing.boxes3d  as box
+
 
 base_res_path = '/home/mxj/workspace_mxj/eval-kitti/MV3D_dev/mv3d_test'
 f_boxes3d = glob.glob(os.path.join(base_res_path, '*_boxes3d.npy'))
@@ -28,11 +31,103 @@ f_rgb = f_rgb[1:]
 tags = [name.split('/')[-1].split('.')[-2] for name in f_rgb]
 assert(len(f_boxes3d) == len(f_label) == len(f_probs) == len(f_top_view) == len(f_rgb))
 
+# return 3d projections
+def box3d_to_rgb_box(boxes3d, Mt=None, Kt=None):
+    if Mt is None: Mt = np.array(cfg.MATRIX_Mt)
+    if Kt is None: Kt = np.array(cfg.MATRIX_Kt)
+
+    num  = len(boxes3d)
+    projections = np.zeros((num,8,3),  dtype=np.float32)
+    for n in range(num):
+        box3d = boxes3d[n]
+        Ps = np.hstack(( box3d, np.ones((8,1))) )
+        Qs = np.matmul(Ps,Mt)
+        Qs = Qs[:,0:3]
+        qs = np.matmul(Qs,Kt)
+        zs = qs[:,2].reshape(8,1)
+        qs = (qs/zs)
+        projections[n] = qs
+    return projections
+
+def project_to_rgb_roi(rois3d):
+    num  = len(rois3d)
+    rois = np.zeros((num,5),dtype=np.int32)
+    projections = box3d_to_rgb_box(rois3d)
+    for n in range(num):
+        qs = projections[n]
+        minx = int(np.min(qs[:,0]))
+        maxx = int(np.max(qs[:,0]))
+        miny = int(np.min(qs[:,1]))
+        maxy = int(np.max(qs[:,1]))
+        rois[n,1:5] = minx,miny,maxx,maxy
+
+    return rois, projections
+
 def generate_result(tag, boxes3d, prob):
-	line = "{} "
-	for box, p in zip(boxes3d, prob)
+	def corner2venter(rois3d):
+		ret = []
+		for roi in rois3d:
+			if 1: # average version
+				roi = np.array(roi)
+				h = abs(np.sum(roi[:4, 1] - roi[4:, 1])/4)
+				w = np.sum(
+						np.sqrt(np.sum((roi[0, [0, 2]] - roi[3, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[1, [0, 2]] - roi[2, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[4, [0, 2]] - roi[7, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[5, [0, 2]] - roi[6, [0, 2]])**2))
+					)/4
+				l = np.sum(
+						np.sqrt(np.sum((roi[0, [0, 2]] - roi[1, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[2, [0, 2]] - roi[3, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[4, [0, 2]] - roi[5, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[6, [0, 2]] - roi[7, [0, 2]])**2))
+					)/4
+				x, y, z = np.sum(roi, axis=0)/8
+				ry = np.sum(
+						math.atan2(roi[2, 0] - roi[1, 0], roi[2, 2] - roi[1, 2]) + \
+						math.atan2(roi[6, 0] - roi[5, 0], roi[6, 2] - roi[5, 2]) + \
+						math.atan2(roi[3, 0] - roi[0, 0], roi[3, 2] - roi[0, 2]) + \
+						math.atan2(roi[7, 0] - roi[4, 0], roi[7, 2] - roi[4, 2]) + \
+						math.atan2(roi[0, 2] - roi[1, 2], roi[1, 0] - roi[0, 0]) + \
+						math.atan2(roi[4, 2] - roi[5, 2], roi[5, 0] - roi[4, 0]) + \
+						math.atan2(roi[3, 2] - roi[2, 2], roi[2, 0] - roi[3, 0]) + \
+						math.atan2(roi[7, 2] - roi[6, 2], roi[6, 0] - roi[7, 0])
+					)/8
+			else: # max version 
+				h = max(abs(roi[:4, 1] - roi[4:, 1]))
+				w = np.max(
+						np.sqrt(np.sum((roi[0, [0, 2]] - roi[3, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[1, [0, 2]] - roi[2, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[4, [0, 2]] - roi[7, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[5, [0, 2]] - roi[6, [0, 2]])**2))
+					)
+				l = np.max(
+						np.sqrt(np.sum((roi[0, [0, 2]] - roi[1, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[2, [0, 2]] - roi[3, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[4, [0, 2]] - roi[5, [0, 2]])**2)) + \
+						np.sqrt(np.sum((roi[6, [0, 2]] - roi[7, [0, 2]])**2))
+					)
+				x, y, z = np.sum(roi, axis=0)/8
+				ry = np.sum(
+						math.atan2(roi[2, 0] - roi[1, 0], roi[2, 2] - roi[1, 2]) + \
+						math.atan2(roi[6, 0] - roi[5, 0], roi[6, 2] - roi[5, 2]) + \
+						math.atan2(roi[3, 0] - roi[0, 0], roi[3, 2] - roi[0, 2]) + \
+						math.atan2(roi[7, 0] - roi[4, 0], roi[7, 2] - roi[4, 2]) + \
+						math.atan2(roi[0, 2] - roi[1, 2], roi[1, 0] - roi[0, 0]) + \
+						math.atan2(roi[4, 2] - roi[5, 2], roi[5, 0] - roi[4, 0]) + \
+						math.atan2(roi[3, 2] - roi[2, 2], roi[2, 0] - roi[3, 0]) + \
+						math.atan2(roi[7, 2] - roi[6, 2], roi[6, 0] - roi[7, 0])
+					)/8
+			ret.append([h, w, l, x, y, z, ry])
+		return ret
 
-
+	line = "Car 0 0 0 {} {} {} {} {} {} {} {} {} {} {} {}\n"
+	rgb_rois2d, rgb_rois3d = project_to_rgb_roi(boxes3d)
+	rgb_rois3d = np.array(corner2venter(rgb_rois3d)) # h, w, l, x, y, z, ry
+	with open(os.path.join('/data/mxj/kitti/mv3d_result/result', tag + '.txt'), 'w+') as of:
+		for box2d, box3d, p in zip(rgb_rois2d, rgb_rois3d, prob):
+			res = line.format(*box2d[1:5], *box3d, prob)
+			of.write(res)
 
 def handler(i):
 	tag = tags[i]
@@ -40,7 +135,7 @@ def handler(i):
 	rgb = cv2.imread(f_rgb[i])
 	boxes3d = np.load(f_boxes3d[i])
 	prob = np.load(f_probs[i])
-	predict_log(tag, top, rgb, boxes3d, prob)
+	visualize_result(tag, top, rgb, boxes3d, prob)
 	generate_result(tag, boxes3d, prob)
 	print(i)
 
@@ -51,7 +146,7 @@ def main():
 def top_image_padding(top_image):
     return np.concatenate((top_image, np.zeros_like(top_image)*255,np.zeros_like(top_image)*255), 1)
 
-def predict_log(tag, top_view, rgb, boxes3d, probs, gt_boxes3d=[]):
+def visualize_result(tag, top_view, rgb, boxes3d, probs, gt_boxes3d=[]):
 	top_image = data.draw_top_image(top_view)
 	top_image = top_image_padding(top_image)
 
