@@ -9,12 +9,25 @@ from config import *
 from multiprocessing import Pool
 import data
 import cv2
+import argparse
 
 import net.utility.draw as nud
 import net.processing.boxes3d  as box
 
 
-base_res_path = '/home/mxj/workspace_mxj/eval-kitti/MV3D_dev/mv3d_test'
+parser = argparse.ArgumentParser(description='testing')
+
+parser.add_argument('-t', '--target-dir', type=str, nargs='?', required=True)
+parser.add_argument('-s', '--source-dir', type=str, nargs='?', required=True)
+
+args = parser.parse_args()
+
+print('\n\n{}\n\n'.format(args))
+
+os.makedirs(os.path.join(args.target_dir, 'result'), exist_ok=True)
+os.makedirs(os.path.join(args.target_dir, 'image'), exist_ok=True)
+
+base_res_path = args.source_dir
 f_boxes3d = glob.glob(os.path.join(base_res_path, '*_boxes3d.npy'))
 f_boxes3d.sort()
 f_label = glob.glob(os.path.join(base_res_path, '*_labels.npy'))
@@ -24,10 +37,10 @@ f_probs.sort()
 base_dataset_path = '/data/mxj/kitti/object_3dop/training'
 f_top_view = glob.glob(os.path.join(base_dataset_path, 'top_view', '*.npy'))
 f_top_view.sort() 
-f_top_view = f_top_view[1:]
+f_top_view = f_top_view
 f_rgb = glob.glob(os.path.join(base_dataset_path, 'image_2', '*.png'))
 f_rgb.sort()
-f_rgb = f_rgb[1:]
+f_rgb = f_rgb
 tags = [name.split('/')[-1].split('.')[-2] for name in f_rgb]
 assert(len(f_boxes3d) == len(f_label) == len(f_probs) == len(f_top_view) == len(f_rgb))
 
@@ -37,7 +50,7 @@ def box3d_to_rgb_box(boxes3d, Mt=None, Kt=None):
     if Kt is None: Kt = np.array(cfg.MATRIX_Kt)
 
     num  = len(boxes3d)
-    projections = np.zeros((num,8,3),  dtype=np.float32)
+    projections = np.zeros((num,8,3), dtype=np.float32)
     for n in range(num):
         box3d = boxes3d[n]
         Ps = np.hstack(( box3d, np.ones((8,1))) )
@@ -51,7 +64,7 @@ def box3d_to_rgb_box(boxes3d, Mt=None, Kt=None):
 
 def project_to_rgb_roi(rois3d):
     num  = len(rois3d)
-    rois = np.zeros((num,5),dtype=np.int32)
+    rois = np.zeros((num,5), dtype=np.int32)
     projections = box3d_to_rgb_box(rois3d)
     for n in range(num):
         qs = projections[n]
@@ -64,7 +77,7 @@ def project_to_rgb_roi(rois3d):
     return rois, projections
 
 def generate_result(tag, boxes3d, prob):
-	def corner2venter(rois3d):
+	def corner2center(rois3d):
 		ret = []
 		for roi in rois3d:
 			if 1: # average version
@@ -121,13 +134,15 @@ def generate_result(tag, boxes3d, prob):
 			ret.append([h, w, l, x, y, z, ry])
 		return ret
 
-	line = "Car 0 0 0 {} {} {} {} {} {} {} {} {} {} {} {}\n"
-	rgb_rois2d, rgb_rois3d = project_to_rgb_roi(boxes3d)
-	rgb_rois3d = np.array(corner2venter(rgb_rois3d)) # h, w, l, x, y, z, ry
-	with open(os.path.join('/data/mxj/kitti/mv3d_result/result', tag + '.txt'), 'w+') as of:
+	line = "Car 0 0 0 {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}\n"
+	rgb_rois2d, _ = project_to_rgb_roi(boxes3d)
+	rgb_rois3d = box.box3d_to_camera_box3d(boxes3d)
+	rgb_rois3d = np.array(corner2center(rgb_rois3d)) # h, w, l, x, y, z, ry
+	with open(os.path.join(args.target_dir, 'result', tag + '.txt'), 'w+') as of:
 		for box2d, box3d, p in zip(rgb_rois2d, rgb_rois3d, prob):
-			res = line.format(*box2d[1:5], *box3d, prob)
-			of.write(res)
+			if p > 0:  # FIXME
+				res = line.format(*box2d[1:5], *box3d, p)
+				of.write(res)
 
 def handler(i):
 	tag = tags[i]
@@ -139,8 +154,9 @@ def handler(i):
 	generate_result(tag, boxes3d, prob)
 	print(i)
 
-def main():
+def main(args):
 	pro = Pool(10)
+	#handler(3000)
 	pro.map(handler, [i for i in range(len(f_top_view))])
 
 def top_image_padding(top_image):
@@ -162,9 +178,9 @@ def visualize_result(tag, top_view, rgb, boxes3d, probs, gt_boxes3d=[]):
 
 	new_size = (predict_camera_view.shape[1] // 2, predict_camera_view.shape[0] // 2)
 	predict_camera_view = cv2.resize(predict_camera_view, new_size)
-	cv2.imwrite(os.path.join('/data/mxj/kitti/mv3d_result/image', tag + 'rgb_.png'), predict_camera_view)
-	cv2.imwrite(os.path.join('/data/mxj/kitti/mv3d_result/image', tag + 'top_.png'), predict_top_view)
+	cv2.imwrite(os.path.join(args.target_dir, 'image', tag + 'rgb_.png'), predict_camera_view)
+	cv2.imwrite(os.path.join(args.target_dir, 'image', tag + 'top_.png'), predict_top_view)
 
 
 if __name__ == '__main__':
-	main()
+	main(args)

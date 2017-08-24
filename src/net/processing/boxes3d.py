@@ -155,6 +155,17 @@ def box3d_to_rgb_box(boxes3d, Mt=None, Kt=None):
                     projections[n]=box2d
         return projections
 
+def box3d_to_camera_box3d(boxes3d):
+    if (cfg.DATA_SETS_TYPE == 'kitti'):
+        num = len(boxes3d)
+        projections = np.zeros((num, 8, 3), dtype=np.float32)
+        for n in range(num):
+            box3d = boxes3d[n]
+            ret = np.hstack((box3d, np.ones((8, 1))))
+            ret = np.matmul(ret, np.array(cfg.MATRIX_T_VELO_2_CAM).T)
+            ret = np.matmul(ret, np.array(cfg.MATRIX_R_RECT_0).T)
+            projections[n] = ret[:, 0:3]
+        return projections
 
 
 def box3d_to_top_projections(boxes3d):

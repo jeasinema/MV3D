@@ -769,7 +769,7 @@ class Loading3DOP(object):
                 # camera coordinate
                 h, w, l, x, y, z, ry = [float(i) for i in data[8:15]]
                 # lidar coordinate
-                h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry
+                h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry  # Such operations are not correct since there are transisition between lidar and camera coordinate
                 ret.append((obj_class, box3d_compose((x, y, z), (h, w, l), (0, 0, rz))))
             return ret
 
