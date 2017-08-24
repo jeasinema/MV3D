@@ -7,7 +7,7 @@ from sklearn.utils import shuffle
 from utils.check_data import check_preprocessed_data, get_file_names
 import net.processing.boxes3d  as box
 from multiprocessing import Process,Queue as Queue, Value,Array
-# import queue
+import queue
 import time
 
 import config
@@ -573,7 +573,7 @@ class KittiLoading(object):
         self.queue_size = queue_size
         self.require_shuffle = require_shuffle
         self.preprocess = data.Preprocess()
-        self.dataset_queue = Queue()
+        self.dataset_queue = queue.Queue()
 
         self.load_index = 0
         self.fill_queue(self.queue_size)
@@ -588,7 +588,7 @@ class KittiLoading(object):
             # FIXME
             self.top_shape = (400, 400, 10)
             self.front_shape = (cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3)
-            self.rgb_shape = (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT, 3)
+            self.rgb_shape = (cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH, 3)
 
         self.loader_worker = threading.Thread(target=self.loader_worker_main)
         #self.loader_worker = Process(target=self.loader_worker_main)  # don't use it, since loader is slower than NN

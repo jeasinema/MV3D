@@ -531,10 +531,10 @@ class Predictor(MV3D):
         self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
         tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
-        if os.path.isdir(tb_dir):
-            command = 'rm -rf %s' % tb_dir
-            print('\nClear old summary file: %s' % command)
-            os.system(command)
+        # if os.path.isdir(tb_dir):
+        #     command = 'rm -rf %s' % tb_dir
+        #     print('\nClear old summary file: %s' % command)
+        #     os.system(command)
         self.default_summary_writer = tf.summary.FileWriter(tb_dir)
         self.n_log_scope = 0
         self.n_max_log_per_scope= 10
