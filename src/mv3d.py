@@ -531,10 +531,10 @@ class Predictor(MV3D):
         self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
         tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
-        if os.path.isdir(tb_dir):
-            command = 'rm -rf %s' % tb_dir
-            print('\nClear old summary file: %s' % command)
-            os.system(command)
+        # if os.path.isdir(tb_dir):
+        #     command = 'rm -rf %s' % tb_dir
+        #     print('\nClear old summary file: %s' % command)
+        #     os.system(command)
         self.default_summary_writer = tf.summary.FileWriter(tb_dir)
         self.n_log_scope = 0
         self.n_max_log_per_scope= 10
@@ -556,13 +556,14 @@ class Predictor(MV3D):
 class Trainer(MV3D):
 
     def __init__(self, train_set, validation_set, pre_trained_weights, train_targets, log_tag=None,
-                 continue_train=False, batch_size=1):
+                 continue_train=False, batch_size=1, lr=0.001):
         top_shape, front_shape, rgb_shape = train_set.get_shape()
         MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag)
         self.train_set = train_set
         self.validation_set = validation_set
         self.train_target= train_targets
         self.batch_size=batch_size
+        self.lr = lr
 
         self.train_summary_writer = None
         self.val_summary_writer = None
@@ -581,7 +582,7 @@ class Trainer(MV3D):
                 # l2 = blocks.l2_regulariser(decay=0.0005)
                 self.learning_rate = tf.placeholder(tf.float32, shape=[])
                 # solver = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
-                solver = tf.train.AdamOptimizer(learning_rate=0.001)
+                solver = tf.train.AdamOptimizer(learning_rate=self.lr)
 
                 # summary
                 self.top_cls_loss = self.net['top_cls_loss']

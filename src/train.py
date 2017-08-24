@@ -32,6 +32,9 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch-size', type=int, nargs='?', default=1,
                         help='set continue train flag')
 
+    parser.add_argument('-l', '--lr', type=float, nargs='?', default=0.001,
+                        help='set learning rate')
+
 
     args = parser.parse_args()
 
@@ -117,5 +120,5 @@ if __name__ == '__main__':
             
             train = mv3d.Trainer(train_set=training, validation_set=validation,
                                  pre_trained_weights=weights, train_targets=targets, log_tag=tag,
-                                 continue_train = args.continue_train, batch_size=args.batch_size)
+                                 continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)
             train(max_iter=max_iter) 
