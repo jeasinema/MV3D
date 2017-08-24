@@ -1,12 +1,14 @@
-#import mv3d
-#import mv3d_net
+import mv3d
+import mv3d_net
 import glob
 from config import *
 import utils.batch_loading as ub
 import argparse
 import os
-#from utils.training_validation_data_splitter import TrainingValDataSplitter
+from utils.training_validation_data_splitter import TrainingValDataSplitter
 from utils.batch_loading import Loading3DOP, KittiLoading
+import net.processing.boxes3d  as box
+
 
 def test_3dop(args):
     # 3dop_proposal should be (N, 8) (7 for pos, 1 for objectness score)
