@@ -604,7 +604,6 @@ class Trainer(MV3D):
                 self.fuse_reg_loss = self.net['fuse_reg_loss']
                 tf.summary.scalar('fuse_reg_loss', self.fuse_reg_loss)
 
-
                 train_var_list =[]
 
                 assert train_targets != []
@@ -789,81 +788,88 @@ class Trainer(MV3D):
             self.log_msg.write('-------------------------------------------------------------------------------------\n')
 
             init_step = self.n_global_step
-            for iter in range(init_step, init_step+max_iter):
-                self.log_msg.write('Current epoch/Total epoch: {}/{}\n'.format(iter, init_step+max_iter))
+            try:
+                for iter in range(init_step, init_step+max_iter):
+                    self.log_msg.write('Current epoch/Total epoch: {}/{}\n'.format(iter, init_step+max_iter))
 
-                is_validation = False
-                summary_it = False
-                summary_runmeta = False
-                print_loss = False
-                log_this_iter = False
-                do_optimize = False
+                    is_validation = False
+                    summary_it = False
+                    summary_runmeta = False
+                    print_loss = False
+                    log_this_iter = False
+                    do_optimize = False
 
-                # set fit flag
-                if iter % validation_step == 0:  summary_it,is_validation,print_loss = True,True,True # summary validation loss
-                if (iter+1) % validation_step == 0:  summary_it,print_loss = True,True # summary train loss
-                if iter % 20 == 0: print_loss = True #print train loss
+                    # set fit flag
+                    if iter % validation_step == 0:  summary_it,is_validation,print_loss = True,True,True # summary validation loss
+                    if (iter+1) % validation_step == 0:  summary_it,print_loss = True,True # summary train loss
+                    if iter % 20 == 0: print_loss = True #print train loss
 
-                if 1 and  iter%summary_step == 0: summary_it,summary_runmeta = True,True
+                    if 1 and  iter%summary_step == 0: summary_it,summary_runmeta = True,True
 
-                if iter % self.iter_debug == 0 or (iter + 1) % self.iter_debug == 0:
-                    log_this_iter = True
-                    print('Summary log image')
-                    if iter % self.iter_debug == 0: is_validation =False
-                    else: is_validation =True
+                    if iter % self.iter_debug == 0 or (iter + 1) % self.iter_debug == 0:
+                        log_this_iter = True
+                        print('Summary log image')
+                        if iter % self.iter_debug == 0: is_validation =False
+                        else: is_validation =True
 
-                data_set = self.validation_set if is_validation else self.train_set
-                self.default_summary_writer = self.val_summary_writer if is_validation else self.train_summary_writer
+                    data_set = self.validation_set if is_validation else self.train_set
+                    self.default_summary_writer = self.val_summary_writer if is_validation else self.train_summary_writer
 
-                step_name = 'validation' if is_validation else 'training'
+                    step_name = 'validation' if is_validation else 'training'
 
-                # load dataset
-                # data_buf = np.array([data_set.load() for _ in range(self.batch_size)]) 
-                # self.batch_rgb_images = data_buf[:, 0]
-                # self.batch_top_view = data_buf[:, 1]
-                # self.batch_front_view = data_buf[:, 2]
-                # self.batch_gt_labels = data_buf[:, 3]
-                # self.batch_gt_boxes3d = data_buf[:, 4]
-                # self.frame_id = data_buf[:, 5]
-                self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
-                self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
-                     data_set.load()
+                    # load dataset
+                    # data_buf = np.array([data_set.load() for _ in range(self.batch_size)]) 
+                    # self.batch_rgb_images = data_buf[:, 0]
+                    # self.batch_top_view = data_buf[:, 1]
+                    # self.batch_front_view = data_buf[:, 2]
+                    # self.batch_gt_labels = data_buf[:, 3]
+                    # self.batch_gt_boxes3d = data_buf[:, 4]
+                    # self.frame_id = data_buf[:, 5]
+                    self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
+                    self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
+                         data_set.load()
 
-                # fit_iterate log init
-                if log_this_iter:
-                    self.time_str = strftime("%Y_%m_%d_%H_%M", localtime())
-                    self.frame_info = data_set.get_frame_info()
-                    self.log_subdir = step_name + '/' + self.time_str
-                    top_image = data.draw_top_image(self.batch_top_view[0])
-                    self.top_image = self.top_image_padding(top_image)
-                    self.front_image = data.draw_front_image(self.batch_front_view[0])
-
-
-                # minic batch_size
-                if iter%self.batch_size:
-                    do_optimize = True
-
-                # fit
-                t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss= \
-                    self.fit_iteration(self.batch_rgb_images, self.batch_top_view, self.batch_front_view,
-                                       self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
-                                       is_validation =is_validation, summary_it=summary_it,
-                                       summary_runmeta=summary_runmeta, log=log_this_iter, do_optimize=do_optimize)
+                    # fit_iterate log init
+                    if log_this_iter:
+                        self.time_str = strftime("%Y_%m_%d_%H_%M", localtime())
+                        self.frame_info = data_set.get_frame_info()
+                        self.log_subdir = step_name + '/' + self.time_str
+                        top_image = data.draw_top_image(self.batch_top_view[0])
+                        self.top_image = self.top_image_padding(top_image)
+                        self.front_image = data.draw_front_image(self.batch_front_view[0])
 
 
-                if print_loss:
-                    self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
-                                       (step_name, self.n_global_step, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss))
+                    # minic batch_size
+                    if iter%self.batch_size:
+                        do_optimize = True
 
-                if iter%ckpt_save_step==0:
-                    self.save_weights(self.train_target, iter)
-                    print('Save target at {}'.format(self.ckpt_dir))
+                    # fit
+                    t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss= \
+                        self.fit_iteration(self.batch_rgb_images, self.batch_top_view, self.batch_front_view,
+                                           self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
+                                           is_validation =is_validation, summary_it=summary_it,
+                                           summary_runmeta=summary_runmeta, log=log_this_iter, do_optimize=do_optimize)
 
-                    if cfg.TRAINING_TIMER:
-                        self.log_msg.write('It takes %0.2f secs to train %d iterations. \n' % \
-                                           (time_it.time_diff_per_n_loops(), ckpt_save_step))
-                self.gc()
-                self.n_global_step += 1
+
+                    if print_loss:
+                        self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
+                                           (step_name, self.n_global_step, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss))
+
+                    if iter%ckpt_save_step==0:
+                        self.save_weights(self.train_target, iter)
+                        print('Save target at {}'.format(self.ckpt_dir))
+
+                        if cfg.TRAINING_TIMER:
+                            self.log_msg.write('It takes %0.2f secs to train %d iterations. \n' % \
+                                               (time_it.time_diff_per_n_loops(), ckpt_save_step))
+                    self.gc()
+                    self.n_global_step += 1
+            except KeyboardInterrupt:
+                if cfg.TRAINING_TIMER:
+                    self.log_msg.write('It takes %0.2f secs to train until now. \n' % \
+                                   (time_it.total_time()))
+                self.save_progress()
+                sys.exit()
 
 
             if cfg.TRAINING_TIMER:
