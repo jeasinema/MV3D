@@ -539,7 +539,7 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
 
 
     _, num_class = scores.get_shape().as_list()
-    dim = np.prod(deltas.get_shape().as_list()[1:])//num_class  # == 3*8, delta contain 3*8 reg result num_class label, so total output is 3*8*num_class
+    dim = np.prod(deltas.get_shape().as_list()[1:])//num_class
 
     with tf.variable_scope('get_scores'):
         rcnn_scores   = tf.reshape(scores,[-1, num_class], name='rcnn_scores')
@@ -547,7 +547,7 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
             logits=rcnn_scores, labels=rcnn_labels))
 
     with tf.variable_scope('get_detals'):
-        num = tf.identity( tf.shape(deltas)[0], 'num')  # num of output boxes
+        num = tf.identity( tf.shape(deltas)[0], 'num')
         idx = tf.identity(tf.range(num)*num_class + rcnn_labels,name='idx')
         deltas1      = tf.reshape(deltas,[-1, dim],name='deltas1')
         rcnn_deltas_with_fp  = tf.gather(deltas1,  idx, name='rcnn_deltas_with_fp')  # remove ignore label
@@ -559,7 +559,7 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
         rcnn_targets_no_fp =  tf.gather(rcnn_targets_with_fp,  fp_idxs, name='rcnn_targets_no_fp')
 
     with tf.variable_scope('modified_smooth_l1'):
-        rcnn_smooth_l1 = modified_smooth_l1(rcnn_deltas_no_fp, rcnn_targets_no_fp, sigma=3.0)  # only positive sample's delta and target take into consideration
+        rcnn_smooth_l1 = modified_smooth_l1(rcnn_deltas_no_fp, rcnn_targets_no_fp, sigma=3.0)
 
     rcnn_reg_loss  = tf.reduce_mean(tf.reduce_sum(rcnn_smooth_l1, axis=1))
 
@@ -700,8 +700,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             # num_class, so it can just classify the car and the background
             fuse_scores = linear(fuse_output, num_hiddens=num_class, name='score')
             fuse_probs = tf.nn.softmax(fuse_scores, name='prob')
-            fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box_1')
-            fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box_2')
+            fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box')
             fuse_deltas = tf.reshape(fuse_deltas, (-1, num_class, *out_shape))
 
         with tf.variable_scope('loss') as scope:

@@ -89,12 +89,12 @@ def make_anchors(bases, stride, image_shape, feature_shape, allowed_border=0):
             inside_inds: indexes of inside anchors
     """
 
-    H, W = feature_shape  # 50, 50
-    img_height, img_width = image_shape # 400, 400
+    H, W = feature_shape
+    img_height, img_width = image_shape
 
     # anchors = shifted bases. Generate proposals from box deltas and anchors
     shift_x = np.arange(0, W) * stride
-    shift_y = np.arange(0, H) *     stride
+    shift_y = np.arange(0, H) * stride
     shift_x, shift_y = np.meshgrid(shift_x, shift_y)
     shifts = np.vstack((shift_x.ravel(), shift_y.ravel(), shift_x.ravel(), shift_y.ravel())).transpose()
 
@@ -135,8 +135,6 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
              labels: pos_neg_inds's labels
              targets:  positive samples's bias to ground truth (top view bounding box regression targets)
     """
-    # gt_boxes = gt_boxes[gt_labels == 1] # a fix for discard gt box which ia not a car, useless
-
     inside_anchors = anchors[inside_inds, :]
 
     # label: 1 is positive, 0 is negative, -1 is dont care
@@ -148,13 +146,11 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
         np.ascontiguousarray(inside_anchors,  dtype=np.float),
         np.ascontiguousarray(gt_boxes, dtype=np.float))
 
-    argmax_overlaps    = overlaps.argmax(axis=1)    
-    max_overlaps       = overlaps[np.arange(len(inside_inds)), argmax_overlaps] # for each anchor, which gt box has the biggest iou to it.
-    gt_argmax_overlaps = overlaps.argmax(axis=0) # for each gt box, which anchor has the biggest iou to it.
-    gt_max_overlaps    = overlaps[gt_argmax_overlaps, np.arange(overlaps.shape[1])] # for the gt box, return the anchors has the biggest iou to it and the corresponding iou
-    # when using 2 or more list for indices, the return is each-by-each in all the list.
-    gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]  # maybe more than 1 anchors has the same biggest overlap to a gt box
-    # the ops above equal to np.where(overlaps[ :, 0] == gt_max_overlaps[0]) + np.where(overlaps[:, 1] == gt_max_overlaps[1]) + np.where(overlaps[:, 2] == gt_max_overlaps[2])
+    argmax_overlaps    = overlaps.argmax(axis=1)
+    max_overlaps       = overlaps[np.arange(len(inside_inds)), argmax_overlaps]
+    gt_argmax_overlaps = overlaps.argmax(axis=0)
+    gt_max_overlaps    = overlaps[gt_argmax_overlaps, np.arange(overlaps.shape[1])]
+    gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
 
     labels[max_overlaps <  CFG.TRAIN.RPN_BG_THRESH_HI] = 0   # bg label
     labels[gt_argmax_overlaps] = 1                           # fg label: for each gt, anchor with highest overlap

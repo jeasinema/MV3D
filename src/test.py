@@ -46,7 +46,7 @@ def test_rpn(args):
       count += 1
 
 def test_mv3d(args):
-    with KittiLoading(object_dir='/data/mxj/kitti/object_3dop', queue_size=5, require_shuffle=False,
+    with KittiLoading(object_dir='/data/mxj/kitti/object_3dop', queue_size=50, require_shuffle=False,
         is_testset=True, use_precal_view=True) as testset:
         os.makedirs(args.target_dir, exist_ok=True)
         test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
