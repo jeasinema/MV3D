@@ -700,6 +700,8 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             # num_class, so it can just classify the car and the background
             fuse_scores = linear(fuse_output, num_hiddens=num_class, name='score')
             fuse_probs = tf.nn.softmax(fuse_scores, name='prob')
+            fuse_deltas = linear(fuse_output, num_hiddens=256, name='box')
+            fuse_deltas = linear(fuse_output, num_hiddens=512, name='box')
             fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box')
             fuse_deltas = tf.reshape(fuse_deltas, (-1, num_class, *out_shape))
 
