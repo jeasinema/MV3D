@@ -93,9 +93,9 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
         np.ascontiguousarray(extended_rois[:,1:5], dtype=np.float),
         np.ascontiguousarray(gt_boxes, dtype=np.float)
     )
-    max_overlaps  = overlaps.max(axis=1)
-    gt_assignment = overlaps.argmax(axis=1)
-    labels        = gt_labels[gt_assignment]
+    max_overlaps  = overlaps.max(axis=1) # for each roi, which gt box has the biggest overlap
+    gt_assignment = overlaps.argmax(axis=1) 
+    labels        = gt_labels[gt_assignment] # assign gt box label(1 for car and 0 for other object) to each roi accoding to the gt box has the biggest overlap to it
 
     # Select foreground RoIs as those with >= FG_THRESH overlap
     # very interesting, since in the beginning, RPN cannot generate good proposals, 
@@ -121,7 +121,7 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     keep   = np.append(fg_inds, fp_inds)
     rois   = extended_rois[keep]
     labels = labels[keep]                # Select sampled values from various arrays:
-    labels[fg_inds.size:] = 0  # Clamp la bels for the background RoIs to 0
+    labels[fg_inds.size:] = 0  # Clamp labels for the background RoIs to 0
 
 
     gt_boxes3d = gt_boxes3d[gt_assignment[keep]]
