@@ -177,6 +177,13 @@ class MV3D(object):
             ratios=ratios,  #aspet ratio
             scales=scales
         )
+        # Now using the anchors in mv3d
+        # self.bases = np.array([
+        #     [4.5, 2.5, 10.5, 12.5],
+        #     [2.5, 4.5, 12.5, 10.5],
+        #     [-0.5, -12, 15.5, 27],
+        #     [-12, -0.5, 27, 15.5]
+        # ])
 
         # output dir, etc
         utilfile.makedirs(cfg.CHECKPOINT_DIR)
