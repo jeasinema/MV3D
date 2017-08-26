@@ -110,6 +110,13 @@ if __name__ == '__main__':
             '2011_09_26': ['0013', '0027', '0048',
                            '0061', '0015', '0028', '0051', '0064']
         }
+
+# '2011_09_26': ['0001', '0002', '0005', '0011', '0013', '0015', '0017', '0018',  '0019', '0020', '0023',
+#                        '0027', '0028', '0029', '0035', '0036', '0039', '0046', '0048', '0051', '0052', '0056', '0057', '0059',
+#                            '0060', '0061', '0064', '0070', '0079', '0084', '0086', '0091']
+#                 #0009 0014 0093 0022 0087 0032
+
+
     # for BatchLoading, only tags is essential and it must be type of list[]
     #with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
         #with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,

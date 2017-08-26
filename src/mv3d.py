@@ -625,12 +625,15 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.top_cls_loss + 0.05 * self.top_reg_loss
+                    self.targets_loss += 1. * self.top_cls_loss + 1 * self.top_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name]) == set(train_targets):
                     self.targets_loss += 1. * self.fuse_cls_loss + 0.05 * self.fuse_reg_loss
 
-                elif set([mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name]) == set(train_targets):
+                elif set([mv3d_net.fusion_net_name]) == set(train_targets):
+                    self.targets_loss += 1. * self.fuse_cls_loss + 1 * self.fuse_reg_loss
+
+                elif set([mv3d_net.imfeature_net_name, mv3d_net.frontfeature_net_name, mv3d_net.fusion_net_name]) == set(train_targets):
                     self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
                 elif set([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])\
@@ -760,6 +763,7 @@ class Trainer(MV3D):
             self.n_global_step = pickle.load(open(path, 'rb'))
             print('\nLoad progress success at {}!'.format(self.n_global_step))
         else:
+            self.n_global_step = 0
             print('\nCan not found progress file!, start at {}'.format(self.n_global_step))
 
 
@@ -833,7 +837,7 @@ class Trainer(MV3D):
                     if log_this_iter:
                         self.time_str = strftime("%Y_%m_%d_%H_%M", localtime())
                         self.frame_info = data_set.get_frame_info()
-                        self.log_subdir = step_name + '/' + self.time_str
+                        self.log_subdir = step_name + '/' + '{}_{}_{}'.format(self.tag, iter, self.time_str)
                         top_image = data.draw_top_image(self.batch_top_view[0])
                         self.top_image = self.top_image_padding(top_image)
                         self.front_image = data.draw_front_image(self.batch_front_view[0])
@@ -960,7 +964,7 @@ class Trainer(MV3D):
 
             net['top_inds']: self.batch_top_inds,
             net['top_pos_inds']: self.batch_top_pos_inds,
-            net['top_labels']: self.batch_top_labels,
+            net['top_labels']: self.batch_top_labels,  
             net['top_targets']: self.batch_top_targets,
 
             net['fuse_labels']: self.batch_fuse_labels,

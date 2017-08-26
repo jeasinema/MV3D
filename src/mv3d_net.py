@@ -19,6 +19,7 @@ from keras.layers import (
     BatchNormalization, 
     MaxPooling2D
     )
+import numpy as np
 
 top_view_rpn_name = 'top_view_rpn'
 imfeature_net_name = 'image_feature'
@@ -526,15 +527,18 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
             SmoothL1(x) = 0.5 * (sigma * x)^2,    if |x| < 1 / sigma^2
                           |x| - 0.5 / sigma^2,    otherwise
         '''
-        sigma2 = sigma * sigma
-        diffs  =  tf.subtract(deltas, targets)
-        smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
+        if deltas.shape[0] == 0 or rcnn_labels.shape[0] == 0: # no positive sample
+            smooth_l1 = 0
+        else:
+            sigma2 = sigma * sigma
+            diffs  =  tf.subtract(deltas, targets)
+            smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
 
-        smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
-        smooth_l1_option2 = tf.abs(diffs) - 0.5 / sigma2
-        smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
-        smooth_l1 = smooth_l1_add
-
+            smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
+            smooth_l1_option2 = tf.abs(diffs) - 0.5 / sigma2
+            smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
+            smooth_l1 = smooth_l1_add
+        
         return smooth_l1
 
 
@@ -574,20 +578,29 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
             SmoothL1(x) = 0.5 * (sigma * x)^2,    if |x| < 1 / sigma^2
                           |x| - 0.5 / sigma^2,    otherwise
         '''
-        sigma2 = sigma * sigma
-        diffs  =  tf.subtract(box_preds, box_targets)
-        smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
+        if deltas.shape[0] == 0: # no positive sample
+            smooth_l1 = 0
+        else:
+            sigma2 = sigma * sigma
+            diffs  =  tf.subtract(box_preds, box_targets)
+            smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
 
-        smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
-        smooth_l1_option2 = tf.abs(diffs) - 0.  / sigma2
-        smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
-        smooth_l1 = smooth_l1_add   #tf.multiply(box_weights, smooth_l1_add)  #
+            smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
+            smooth_l1_option2 = tf.abs(diffs) - 0.  / sigma2
+            smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
+            smooth_l1 = smooth_l1_add   #tf.multiply(box_weights, smooth_l1_add)  #
 
         return smooth_l1
 
     scores1      = tf.reshape(scores,[-1,2])
     rpn_scores   = tf.gather(scores1,inds)  # remove ignore label
-    rpn_cls_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores, labels=rpn_labels))
+    # for more sample in RPN training, we need to use loss weight to balance the pos/neg sample
+    rpn_scores_pos = tf.gather(scores1, pos_inds)
+    rpn_labels_pos = tf.ones_like(pos_inds)
+
+    rpn_cls_loss_pos = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores_pos, labels=rpn_labels_pos))
+    rpn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores, labels=rpn_labels))
+    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 1.0-0.05), tf.multiply(rpn_cls_loss_all, 0.05))
 
     deltas1       = tf.reshape(deltas,[-1,4])
     rpn_deltas    = tf.gather(deltas1, pos_inds)  # remove ignore label
@@ -632,7 +645,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             # RPN
             top_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='top_ind')
             top_pos_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='top_pos_ind')
-            top_labels = tf.placeholder(shape=[None], dtype=tf.int32, name='top_label')
+            top_labels = tf.placeholder(shape=[None], dtype=tf.int32, name='top_label') # only contain the labels of selected sample after rpn_target
             top_targets = tf.placeholder(shape=[None, 4], dtype=tf.float32, name='top_target')
             top_cls_loss, top_reg_loss = rpn_loss(top_scores, top_deltas, top_inds, top_pos_inds,
                                                   top_labels, top_targets)
@@ -700,9 +713,9 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             # num_class, so it can just classify the car and the background
             fuse_scores = linear(fuse_output, num_hiddens=num_class, name='score')
             fuse_probs = tf.nn.softmax(fuse_scores, name='prob')
-            fuse_deltas = linear(fuse_output, num_hiddens=256, name='box')
-            fuse_deltas = linear(fuse_output, num_hiddens=512, name='box')
-            fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box')
+            fuse_deltas = linear_bn_relu(fuse_output, num_hiddens=256, name='box_1')
+            fuse_deltas = linear_bn_relu(fuse_output, num_hiddens=256, name='box_2')
+            fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box_3')
             fuse_deltas = tf.reshape(fuse_deltas, (-1, num_class, *out_shape))
 
         with tf.variable_scope('loss') as scope:
