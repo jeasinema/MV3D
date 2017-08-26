@@ -527,17 +527,14 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
             SmoothL1(x) = 0.5 * (sigma * x)^2,    if |x| < 1 / sigma^2
                           |x| - 0.5 / sigma^2,    otherwise
         '''
-        if deltas.shape[0] == 0 or rcnn_labels.shape[0] == 0: # no positive sample
-            smooth_l1 = 0
-        else:
-            sigma2 = sigma * sigma
-            diffs  =  tf.subtract(deltas, targets)
-            smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
+        sigma2 = sigma * sigma
+        diffs  =  tf.subtract(deltas, targets)
+        smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
 
-            smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
-            smooth_l1_option2 = tf.abs(diffs) - 0.5 / sigma2
-            smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
-            smooth_l1 = smooth_l1_add
+        smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
+        smooth_l1_option2 = tf.abs(diffs) - 0.5 / sigma2
+        smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
+        smooth_l1 = smooth_l1_add
         
         return smooth_l1
 
@@ -565,7 +562,9 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
     with tf.variable_scope('modified_smooth_l1'):
         rcnn_smooth_l1 = modified_smooth_l1(rcnn_deltas_no_fp, rcnn_targets_no_fp, sigma=3.0)
 
-    rcnn_reg_loss  = tf.reduce_mean(tf.reduce_sum(rcnn_smooth_l1, axis=1))
+    rcnn_reg_loss = tf.reduce_mean(tf.reduce_sum(rcnn_smooth_l1, axis=1))
+    # remove nans
+    rcnn_reg_loss = tf.where(tf.is_nan(rcnn_reg_loss), tf.zeros_like(rcnn_reg_loss), rcnn_reg_loss)
 
     return rcnn_cls_loss, rcnn_reg_loss
 
@@ -578,17 +577,14 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
             SmoothL1(x) = 0.5 * (sigma * x)^2,    if |x| < 1 / sigma^2
                           |x| - 0.5 / sigma^2,    otherwise
         '''
-        if deltas.shape[0] == 0: # no positive sample
-            smooth_l1 = 0
-        else:
-            sigma2 = sigma * sigma
-            diffs  =  tf.subtract(box_preds, box_targets)
-            smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
+        sigma2 = sigma * sigma
+        diffs  =  tf.subtract(box_preds, box_targets)
+        smooth_l1_signs = tf.cast(tf.less(tf.abs(diffs), 1.0 / sigma2), tf.float32)
 
-            smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
-            smooth_l1_option2 = tf.abs(diffs) - 0.  / sigma2
-            smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
-            smooth_l1 = smooth_l1_add   #tf.multiply(box_weights, smooth_l1_add)  #
+        smooth_l1_option1 = tf.multiply(diffs, diffs) * 0.5 * sigma2
+        smooth_l1_option2 = tf.abs(diffs) - 0.  / sigma2
+        smooth_l1_add = tf.multiply(smooth_l1_option1, smooth_l1_signs) + tf.multiply(smooth_l1_option2, 1-smooth_l1_signs)
+        smooth_l1 = smooth_l1_add   #tf.multiply(box_weights, smooth_l1_add)  #
 
         return smooth_l1
 
@@ -608,7 +604,10 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
     with tf.variable_scope('modified_smooth_l1'):
         rpn_smooth_l1 = modified_smooth_l1(rpn_deltas, rpn_targets, sigma=3.0)
 
-    rpn_reg_loss  = tf.reduce_mean(tf.reduce_sum(rpn_smooth_l1, axis=1))
+    rpn_reg_loss = tf.reduce_mean(tf.reduce_sum(rpn_smooth_l1, axis=1))
+    # remove nans
+    rpn_reg_loss = tf.where(tf.is_nan(rpn_reg_loss), tf.zeros_like(rpn_reg_loss), rpn_reg_loss)
+
     return rpn_cls_loss, rpn_reg_loss
 
 def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
