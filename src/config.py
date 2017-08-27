@@ -41,7 +41,7 @@ __C.FRONT_C_MIN=-750
 __C.FRONT_WIDTH=750
 __C.FRONT_HEIGHT=50
 __C.USE_FRONT=1
-__C.GPU_USE='3'
+__C.GPU_USE='0'
 __C.GPU_MEMORY_FRACTION=0.5
 
 # for conv3d on bbox regress

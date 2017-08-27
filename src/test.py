@@ -5,9 +5,11 @@ from config import *
 import utils.batch_loading as ub
 import argparse
 import os
+import sys
 from utils.training_validation_data_splitter import TrainingValDataSplitter
 from utils.batch_loading import Loading3DOP, KittiLoading
 import net.processing.boxes3d  as box
+
 
 
 def test_3dop(args):
@@ -46,7 +48,7 @@ def test_rpn(args):
       count += 1
 
 def test_mv3d(args):
-    with KittiLoading(object_dir='/data/mxj/kitti/object_3dop', queue_size=50, require_shuffle=False,
+    with KittiLoading(object_dir='/data/mxj/kitti/object', queue_size=50, require_shuffle=False,
         is_testset=True, use_precal_view=True) as testset:
         os.makedirs(args.target_dir, exist_ok=True)
         test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
@@ -56,13 +58,48 @@ def test_mv3d(args):
         while data:
             print('Process {} data'.format(count))
             tag, rgb, _, top_view, front_view = data 
-            boxes3d, labels, probs = test(top_view, front_view, rgb)
+            boxes3d, labels, probs = test(top_view, front_view, rgb, score_threshold=0.5)
             np.save(os.path.join(args.target_dir, '{}_boxes3d.npy'.format(tag[0])), boxes3d)
             np.save(os.path.join(args.target_dir, '{}_labels.npy'.format(tag[0])), labels)        
             np.save(os.path.join(args.target_dir, '{}_probs.npy'.format(tag[0])), probs)        
 
             data = testset.load()
             count += 1
+
+def test_single_mv3d(args):
+    def label_to_box3d(label):
+        # output: [1, N, 8, 3]
+        ret = []
+        for line in label:
+            line = line.split()
+            obj = line[0]
+            if obj == 'Car' or obj == 'Van': #or obj == 'Tram' or obj == 'Truck':
+                h, w, l, x, y, z, ry = [float(i) for i in line[8:15]]
+                # lidar coordinate
+                h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry
+                gt_box3d = box.box3d_compose((x, y, z), (h, w, l), (0, 0, rz))
+                ret.append(gt_box3d)
+        return np.array([ret])
+
+    with KittiLoading(object_dir='/data/mxj/kitti/object', queue_size=1, require_shuffle=False,
+        is_testset=False, use_precal_view=True) as testset:
+        test = mv3d.Predictor_for_test(*testset.get_shape(), log_tag=args.tag)
+        while True:
+            print('Please input frame index for test, q for exit:')
+            index = sys.stdin.readline()
+            if index == 'q\n': sys.exit()
+            index, threshold = index.split(',')
+            index = int(index)
+            threshold = float(threshold)
+            try:
+              data = testset.load_specified(index)
+              tag, label, rgb, _, top_view, front_view = data 
+              gt_box3d = label_to_box3d(label[0])
+              boxes3d, labels, probs = test(top_view, front_view, rgb, threshold, gt_boxes3d=gt_box3d)
+              test.dump_log(args.target_dir, index)
+            except:
+              print('test {} failed!'.format(index))
+
 
 def test_front(args):
   pass
@@ -368,4 +405,5 @@ if __name__ == '__main__':
     # test_rpn(args)
     # test_lidar_fast()
     # test_lidar()
-    test_mv3d(args)
+    # test_mv3d(args)
+    test_single_mv3d(args)

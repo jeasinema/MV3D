@@ -257,9 +257,7 @@ class MV3D(object):
         self.time_str = None
         self.frame_info =None
 
-
-     # this is used for testing
-    def predict(self, top_view, front_view, rgb_image):
+    def predict(self, top_view, front_view, rgb_image, score_threshold=0.75):
         self.lables = []  # todo add lables output
 
         self.top_view = top_view
@@ -300,9 +298,58 @@ class MV3D(object):
         self.fuse_probs, self.fuse_deltas = \
             self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd2)
 
-        self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=0.5)
+        self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=score_threshold)
         return self.boxes3d, self.lables, self.probs
- 
+
+
+     # this is used for testing
+    def predict_for_test(self, top_view, front_view, rgb_image, score_threshold=0.75, gt_boxes3d = []):
+        self.lables = []  # todo add lables output
+        self.batch_gt_boxes3d = gt_boxes3d
+        if len(gt_boxes3d) > 0:
+            self.batch_gt_top_boxes = data.box3d_to_top_box(self.batch_gt_boxes3d[0])
+
+        self.top_view = top_view
+        self.rgb_image = rgb_image
+        self.front_view = front_view
+        fd1 = {
+            self.net['top_view']: self.top_view,
+            self.net['top_anchors']: self.top_view_anchors,
+            self.net['top_inside_inds']: self.anchors_inside_inds,
+            blocks.IS_TRAIN_PHASE: False,
+            K.learning_phase(): True
+        }
+
+        self.batch_proposals, self.batch_proposal_scores = \
+            self.sess.run([self.net['proposals'], self.net['proposal_scores']], fd1)
+        self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
+        self.top_rois = self.batch_proposals
+        if len(self.top_rois) == 0:
+            return np.zeros((0, 8, 3)), []
+
+        self.rois3d = project_to_roi3d(self.top_rois)
+        # Here we just use the pre-defined height to generate the z axis.
+        # In the origin paper, it is 1.45m, in this implementation is -2 and 0.5(2.5m)
+        self.front_rois = project_to_front_roi(self.rois3d)
+        self.rgb_rois = project_to_rgb_roi(self.rois3d)
+
+        fd2 = {
+            **fd1,
+            self.net['front_view']: self.front_view,
+            self.net['rgb_images']: self.rgb_image,
+
+            self.net['top_rois']: self.top_rois,
+            self.net['front_rois']: self.front_rois,
+            self.net['rgb_rois']: self.rgb_rois,
+
+        }
+
+        self.fuse_probs, self.fuse_deltas = \
+            self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd2)
+
+        self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=score_threshold)
+        return self.boxes3d, self.lables, self.probs
+
     # this is used for testing
     def predict_3dop(self, proposals, proposal_scores, top_view, front_view, rgb_image):
         # input: proposals: (N, 7)
@@ -353,15 +400,43 @@ class MV3D(object):
 
         # draw gt on camera and top view:
         if len(gt_boxes3d) > 0: # array size > 1 cannot directly used in if
-            predict_top_view = data.draw_box3d_on_top(predict_top_view, gt_boxes3d, color=(0, 0, 255))
-            predict_camera_view = draw_box3d_on_camera(predict_camera_view, gt_boxes3d, color=(0, 0, 255))
+            predict_top_view = data.draw_box3d_on_top(predict_top_view, gt_boxes3d, color=(255, 0, 0))
+            predict_camera_view = draw_box3d_on_camera(predict_camera_view, gt_boxes3d, color=(255, 0, 0))
 
         new_size = (predict_camera_view.shape[1] // 2, predict_camera_view.shape[0] // 2)
         predict_camera_view = cv2.resize(predict_camera_view, new_size)
-        # nud.imsave('predict_camera_view' , predict_camera_view, log_subdir)
-        # nud.imsave('predict_top_view' , predict_top_view, log_subdir)
+        
         self.summary_image(predict_camera_view, scope_name + '/predict_camera_view', step=step)
         self.summary_image(predict_top_view, scope_name + '/predict_top_view', step=step)
+    
+
+    def predict_log_for_test(self, log_subdir, log_rpn=False, step=None, scope_name='', gt_boxes3d=[]):
+        self.top_image = data.draw_top_image(self.top_view[0])
+        self.top_image = self.top_image_padding(self.top_image)
+        if log_rpn: self.log_rpn(step=step ,scope_name=scope_name)
+        self.log_fusion_net_detail(log_subdir, self.fuse_probs, self.fuse_deltas)
+        text_lables = ['No.%d class:1 prob: %.4f' % (i, prob) for i, prob in enumerate(self.probs)]
+        predict_camera_view = nud.draw_box3d_on_camera(self.rgb_image[0], self.boxes3d, text_lables=text_lables)
+   
+        predict_top_view = data.draw_box3d_on_top(self.top_image, self.boxes3d)
+
+        # draw gt on camera and top view:
+        if len(gt_boxes3d) > 0: # array size > 1 cannot directly used in if
+            predict_top_view = data.draw_box3d_on_top(predict_top_view, gt_boxes3d, color=(255, 0, 0))
+            predict_camera_view = draw_box3d_on_camera(predict_camera_view, gt_boxes3d, color=(255, 0, 0))
+
+        new_size = (predict_camera_view.shape[1] // 2, predict_camera_view.shape[0] // 2)
+        predict_camera_view = cv2.resize(predict_camera_view, new_size)
+        
+        self.summary_image(predict_camera_view, scope_name + '/predict_camera_view', step=0)
+        self.summary_image(predict_top_view, scope_name + '/predict_top_view', step=0)
+        self.summary_image(predict_top_view, scope_name + '/predict_top_view', step=0)
+        if self.batch_proposals is not None:
+            rpn_proposal = draw_rpn_proposal(self.top_image, self.batch_proposals, self.batch_proposal_scores, draw_num=20)
+            # nud.imsave('img_rpn_proposal', rpn_proposal, subdir)
+            self.summary_image(rpn_proposal, scope_name + '/img_rpn_proposal',step=0) # just all the proposals. after nms, lighter color, higher score
+            self.summary_image(rpn_proposal, scope_name + '/img_rpn_proposal',step=0) # just all the proposals. after nms, lighter color, higher score
+
 
 
 
@@ -538,6 +613,33 @@ class Predictor(MV3D):
         self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
         tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
+        if os.path.isdir(tb_dir):
+            command = 'rm -rf %s' % tb_dir
+            print('\nClear old summary file: %s' % command)
+            os.system(command)
+        self.default_summary_writer = tf.summary.FileWriter(tb_dir)
+        self.n_log_scope = 0
+        self.n_max_log_per_scope= 10
+
+
+    def __call__(self, top_view, front_view, rgb_image, nms_threshold=0.5, gt_boxes3d=[]):
+        return self.predict(top_view, front_view, rgb_image, score_threshold=nms_threshold, gt_boxes3d=gt_boxes3d)
+
+    def dump_log(self,log_subdir, n_frame):
+        n_start = n_frame - (n_frame % (self.n_max_log_per_scope))
+        n_end = n_start + self.n_max_log_per_scope -1
+
+        scope_name = 'predict_%d_%d' % (n_start, n_end)
+        self.predict_log(log_subdir=log_subdir,log_rpn=False, step=n_frame,scope_name=scope_name, gt_boxes3d=self.batch_gt_boxes3d[0])
+
+class Predictor_for_test(MV3D):
+    def __init__(self, top_shape, front_shape, rgb_shape, log_tag=None, weights_tag=None, weight_name='default'):
+        weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
+        MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag, weigths_dir=weigths_dir)
+        self.variables_initializer()
+        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
+
+        tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
         # if os.path.isdir(tb_dir):
         #     command = 'rm -rf %s' % tb_dir
         #     print('\nClear old summary file: %s' % command)
@@ -547,17 +649,15 @@ class Predictor(MV3D):
         self.n_max_log_per_scope= 10
 
 
-    def __call__(self, top_view, front_view, rgb_image):
-        return self.predict(top_view, front_view, rgb_image)
+    def __call__(self, top_view, front_view, rgb_image, nms_threshold, gt_boxes3d=[]):
+        return self.predict_for_test(top_view, front_view, rgb_image, score_threshold=nms_threshold, gt_boxes3d=gt_boxes3d)
 
     def dump_log(self,log_subdir, n_frame):
         n_start = n_frame - (n_frame % (self.n_max_log_per_scope))
         n_end = n_start + self.n_max_log_per_scope -1
 
-        scope_name = 'predict_%d_%d' % (n_start, n_end)
-        self.predict_log(log_subdir=log_subdir,log_rpn=True, step=n_frame,scope_name=scope_name)
-
-
+        scope_name = 'predict'
+        self.predict_log_for_test(log_subdir=log_subdir,log_rpn=False, step=n_frame,scope_name=scope_name, gt_boxes3d=self.batch_gt_boxes3d[0])
 
 
 class Trainer(MV3D):
