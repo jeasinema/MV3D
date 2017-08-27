@@ -687,6 +687,40 @@ class KittiLoading(object):
             ret = None
         return ret
 
+    def load_specified(self, index=0):
+        rgb = self.preprocess.rgb(cv2.imread(self.f_rgb[index]))
+        raw_lidar = np.fromfile(self.f_lidar[index], dtype=np.float32).reshape((-1, 4))
+        if self.use_precal_view:
+            top_view = np.load(self.f_top[index])
+            front_view = np.load(self.f_front[index])
+        else: 
+            top_view = self.preprocess.lidar_to_top(raw_lidar)
+        # top_view = np.ones((400, 400, 10), dtype=np.float32)
+            front_view = self.preprocess.lidar_to_front_fast(raw_lidar)
+        # front_view = np.ones((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3), dtype=np.float32)
+        labels = [line for line in open(self.f_label[index], 'r').readlines()]
+        tag = self.data_tag[index]
+        
+        if self.is_testset:
+            ret = (
+                np.array([tag]),
+                np.array([rgb]), 
+                np.array([raw_lidar]),
+                np.array([top_view]),
+                np.array([front_view])
+            )
+        else:
+            ret = (
+                np.array([tag]),
+                np.array([labels]), 
+                np.array([rgb]),
+                np.array([raw_lidar]),
+                np.array([top_view]),
+                np.array([front_view])
+            )
+        return ret
+
+
     def loader_worker_main(self):
         while not self.work_exit:
             if self.dataset_queue.qsize() >= self.queue_size // 2:
@@ -834,6 +868,7 @@ class BatchLoading3:
         self.raw_lidar = Lidar(tags)
         self.tags = self.raw_lidar.get_tags()
         self.batch_size = batch_size
+        print(len(self.raw_img.get_tags()), len(self.raw_lidar.get_tags()), len(self.raw_tracklet.get_tags()))
         assert(len(self.raw_img.get_tags()) == \
                len(self.raw_lidar.get_tags()) == \
                len(self.raw_tracklet.get_tags()))
