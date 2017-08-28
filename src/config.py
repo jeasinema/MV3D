@@ -40,6 +40,9 @@ __C.FRONT_C_MAX=750
 __C.FRONT_C_MIN=-750
 __C.FRONT_WIDTH=750
 __C.FRONT_HEIGHT=50
+__C.BOX3D_Z_MIN=-2.52
+__C.BOX3D_Z_MAX=-1.02
+
 __C.USE_FRONT=1
 __C.GPU_USE='0'
 __C.GPU_MEMORY_FRACTION=0.5
@@ -138,12 +141,12 @@ elif __C.DATA_SETS_TYPE == 'didi2':
     TOP_Y_DIVISION = 0.2
     TOP_Z_DIVISION = 0.3
 elif __C.DATA_SETS_TYPE == 'kitti':
-    TOP_Y_MIN = -20
-    TOP_Y_MAX = +20
+    TOP_Y_MIN = -25
+    TOP_Y_MAX = +25
     TOP_X_MIN = 0
-    TOP_X_MAX = 40
-    TOP_Z_MIN = -2.0
-    TOP_Z_MAX = 0.5
+    TOP_X_MAX = 80
+    TOP_Z_MIN = -3.7
+    TOP_Z_MAX = 0.2
 
     TOP_X_DIVISION = 0.1
     TOP_Y_DIVISION = 0.1

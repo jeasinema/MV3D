@@ -75,8 +75,8 @@ def test_single_mv3d(args):
             obj = line[0]
             if obj == 'Car' or obj == 'Van': #or obj == 'Tram' or obj == 'Truck':
                 h, w, l, x, y, z, ry = [float(i) for i in line[8:15]]
-                # lidar coordinate
-                h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry
+                h, w, l, x, y, z, rz = h, w, l, box.camera_to_lidar_coords(x, y, z), -ry-math.pi/2
+                # h, l, w, x, y, z, rz = h, l, w, z, -x, -y, -ry-math.pi/2
                 gt_box3d = box.box3d_compose((x, y, z), (h, w, l), (0, 0, rz))
                 ret.append(gt_box3d)
         return np.array([ret])
