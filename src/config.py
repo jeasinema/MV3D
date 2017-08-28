@@ -48,7 +48,9 @@ __C.GPU_USE='0'
 __C.GPU_MEMORY_FRACTION=0.5
 
 # for NMS
+#### don't forget to change the TOPN values in configuration.py in the same time!!!
 __C.RPN_NMS_THRESHOLD=0.7
+__C.RPN_NMS_THRESHOLD_TRAINING=0.7  
 __C.RCNN_NMS_THRESHOLD=0.75
 
 # for conv3d on bbox regress

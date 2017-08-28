@@ -142,8 +142,8 @@ def rpn_nms_generator(
 def tf_rpn_nms(
     scores, deltas, anchors, inside_inds,
     stride, img_width,img_height,img_scale,
-    nms_thresh, min_size, nms_pre_topn, nms_post_topn,
-    name='rpn_mns'):
+    nms_thresh, min_size, nms_pre_topn=CFG.TRAIN.RPN_NMS_PRE_TOPN, 
+    nms_post_topn=CFG.TRAIN.RPN_NMS_POST_TOPN, name='rpn_mns'):
 
     #<todo>
     #assert batch_size == 1, 'Only single image batches are supported'

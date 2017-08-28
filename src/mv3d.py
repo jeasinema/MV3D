@@ -264,6 +264,7 @@ class MV3D(object):
         self.rgb_image = rgb_image
         self.front_view = front_view
         fd1 = {
+            self.net['rpn_nms_threshold']: cfg.RPN_NMS_THRESHOLD,
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
             self.net['top_inside_inds']: self.anchors_inside_inds,
@@ -313,6 +314,7 @@ class MV3D(object):
         self.rgb_image = rgb_image
         self.front_view = front_view
         fd1 = {
+            self.net['rpn_nms_threshold']: cfg.RPN_NMS_THRESHOLD,
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
             self.net['top_inside_inds']: self.anchors_inside_inds,
@@ -1005,6 +1007,7 @@ class Trainer(MV3D):
 
         ## run propsal generation
         fd1 = {
+            net['rpn_nms_threshold']: cfg.RPN_NMS_THRESHOLD_TRAINING,
             net['top_view']: batch_top_view,
             net['top_anchors']: self.top_view_anchors,
             net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?

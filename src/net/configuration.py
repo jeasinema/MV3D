@@ -14,23 +14,23 @@ CFG.TRAIN = EasyDict()
 CFG.TRAIN.IMS_PER_BATCH = 1  # Images to use per minibatch
 
 #rpn
-CFG.TRAIN.RPN_BATCHSIZE    = 5000
+CFG.TRAIN.RPN_BATCHSIZE    = 5000  # this is the amount of anchors for training RPN
 CFG.TRAIN.RPN_FG_FRACTION  = 0.25
-CFG.TRAIN.RPN_FG_THRESH_LO = 0.7
-CFG.TRAIN.RPN_BG_THRESH_HI = 0.3
+CFG.TRAIN.RPN_FG_THRESH_LO = 0.7   # To decided which is FG(by overlap)
+CFG.TRAIN.RPN_BG_THRESH_HI = 0.3   # TO decided which is BG(by overlap)
 
-CFG.TRAIN.RPN_NMS_THRESHOLD = 0.7
-CFG.TRAIN.RPN_NMS_MIN_SIZE  = 8
-CFG.TRAIN.RPN_NMS_PRE_TOPN  = 6000
-CFG.TRAIN.RPN_NMS_POST_TOPN = 1200
+CFG.TRAIN.RPN_NMS_THRESHOLD = 0.7 # can be override when using the nms generator, so deprecated(look at config.py instead)
+CFG.TRAIN.RPN_NMS_MIN_SIZE  = 8   # to trunc some extreme small bbox(w.r.t. the real size of the image)
+CFG.TRAIN.RPN_NMS_PRE_TOPN  = 5000 #6000
+CFG.TRAIN.RPN_NMS_POST_TOPN = 2000 #1200  this is the amount of proposals output by the RPN(Anytime)
 
 
 #rcnn
-CFG.TRAIN.RCNN_BATCH_SIZE   = 128
+CFG.TRAIN.RCNN_BATCH_SIZE   = 128  #This is the amount of rois output to rcnn on training(somehow should be less than RPN_NMS_POST_TOPN)
 CFG.TRAIN.RCNN_FG_FRACTION  = 0.25
-CFG.TRAIN.RCNN_BG_THRESH_HI = 0.5
-CFG.TRAIN.RCNN_BG_THRESH_LO = 0.1
-CFG.TRAIN.RCNN_FG_THRESH_LO = 0.5
+CFG.TRAIN.RCNN_BG_THRESH_HI = 0.01 # 0.5  to decided which is negative sample with LO togather(by overlap)
+CFG.TRAIN.RCNN_BG_THRESH_LO = 0    # 0.1
+CFG.TRAIN.RCNN_FG_THRESH_LO = 0.5  # to decided which is positive sample(by overlap)
 CFG.TRAIN.RCNN_box_NORMALIZE_STDS = (0.1, 0.1, 0.2, 0.2)
 
 

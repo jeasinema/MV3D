@@ -28,7 +28,7 @@ fusion_net_name = 'fusion'
 conv3d_net_name = 'conv3d_for_regress'
 
 
-def top_feature_net(input, anchors, inds_inside, num_bases):
+def top_feature_net(input, anchors, inds_inside, num_bases, nms_thresh):
     """temporary net for debugging only. may not follow the paper exactly .... 
     :param input: 
     :param anchors: 
@@ -84,7 +84,7 @@ def top_feature_net(input, anchors, inds_inside, num_bases):
         img_scale = 1
         rois, roi_scores = tf_rpn_nms( probs, deltas, anchors, inds_inside,
                                        top_rpn_stride, img_width, img_height, img_scale,
-                                       nms_thresh=cfg.RPN_NMS_THRESHOLD, min_size=top_rpn_stride, nms_pre_topn=500, nms_post_topn=100,
+                                       nms_thresh=nms_thresh, min_size=top_rpn_stride, #nms_pre_topn=500, nms_post_topn=100,
                                        name ='nms')
     feature = block
 
@@ -92,7 +92,7 @@ def top_feature_net(input, anchors, inds_inside, num_bases):
     return feature, scores, probs, deltas, rois, roi_scores, top_rpn_stride, top_rcnn_stride
 
 
-def top_feature_net_r(input, anchors, inds_inside, num_bases):
+def top_feature_net_r(input, anchors, inds_inside, num_bases, nms_thresh):
     """
     :param input: 
     :param anchors: 
@@ -136,7 +136,7 @@ def top_feature_net_r(input, anchors, inds_inside, num_bases):
         img_scale = 1
         rois, roi_scores = tf_rpn_nms( probs, deltas, anchors, inds_inside,
                                        top_rpn_stride, img_width, img_height, img_scale,
-                                       nms_thresh=cfg.RPN_NMS_THRESHOLD, min_size=top_tpn_stride, nms_pre_topn=500, nms_post_topn=100,
+                                       nms_thresh=nms_thresh, min_size=top_tpn_stride, #nms_pre_topn=500, nms_post_topn=100,
                                        name ='nms')
 
     feature = block
@@ -638,6 +638,8 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     out_shape = (8, 3)
     stride = 8
 
+    rpn_nms_threshold = tf.placeholder(shape=None, dtype=tf.float32, name='rpn_nms_threshold')
+
     top_anchors = tf.placeholder(shape=[None, 4], dtype=tf.int32, name='anchors')
     top_inside_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='inside_inds')
 
@@ -658,10 +660,10 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         # top feature
         if cfg.USE_RESNET_AS_TOP_BASENET==True:
             top_features, top_scores, top_probs, top_deltas, proposals, proposal_scores, top_feature_rpn_stride, top_feature_rcnn_stride = \
-                top_feature_net_r(top_view, top_anchors, top_inside_inds, len_bases)
+                top_feature_net_r(top_view, top_anchors, top_inside_inds, len_bases, rpn_nms_threshold)
         else:
             top_features, top_scores, top_probs, top_deltas, proposals, proposal_scores, top_feature_rpn_stride, top_feature_rcnn_stride = \
-                top_feature_net(top_view, top_anchors, top_inside_inds, len_bases)
+                top_feature_net(top_view, top_anchors, top_inside_inds, len_bases, rpn_nms_threshold)
 
         with tf.variable_scope('loss'):
             # RPN
@@ -765,6 +767,8 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
 
     return {
+        'rpn_nms_threshold':rpn_nms_threshold,
+
         'top_anchors':top_anchors,
         'top_inside_inds':top_inside_inds,
         'top_view':top_view,

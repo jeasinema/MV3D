@@ -102,19 +102,21 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     # so we have to fuse the gt into proposals. 
     # But in fact, the official method for training faster-rcnn should be first individually trained the RPN, 
     # here it just train the whole network end2end, so it choose this method.
-    fg_inds = np.where(max_overlaps >= CFG.TRAIN.RCNN_FG_THRESH_LO)[0]
     # !!! the commemted code below(which is not commented in rcnn_target) is for balancing the amount of positive and negative sample
     # which is introduced in SSD
+    num_fg = int(CFG.TRAIN.RCNN_FG_FRACTION * CFG.TRAIN.RCNN_BATCHSIZE)
+    fg_inds = np.where(max_overlaps >= CFG.TRAIN.RCNN_FG_THRESH_LO)[0]
+    if len(fg_inds) > num_fg:
+        fg_inds = np.random.choice(fg_inds, size=num_fg, replace=False)
 
-    # fg_rois_per_this_image = int(min(10, fg_inds.size))
-    # if fg_inds.size > 0:
-    #     fg_inds = np.random.choice(fg_inds, size=fg_rois_per_this_image, replace=False)
-
-    # Select false positive
-    fp_inds = np.where((max_overlaps < 0.01))[0]
-    # fp_rois_per_this_image = int(min(10, fp_inds.size))
-    # if fp_inds.size > 0:
-    #     fp_inds = np.random.choice(fp_inds, size=fp_rois_per_this_image, replace=False)
+    # Select false positive(here we call them fp because they've passed the NMS(which means their scores are ok))
+    num_fp = CFG.TRAIN.RCNN_BATCHSIZE - len(fg_inds)
+    fp_inds = np.intersect1d(
+        np.where(max_overlaps <= CFG.TRAIN.RCNN_BG_THRESH_HI)[0],
+        np.where(CFG.TRAIN.RCNN_BG_THRESH_LO <= max_overlaps)[0]
+    )
+    if len(fp_inds) > num_fp:
+        fp_inds = np.random.choice(fp_inds, size=num_fp, replace=False)
 
 
     # The indices that we're selecting (both fg and bg)
