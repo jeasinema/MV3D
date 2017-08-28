@@ -6,6 +6,7 @@ from shapely.geometry import Polygon
 from config import TOP_X_MAX,TOP_X_MIN,TOP_Y_MAX,TOP_Z_MIN,TOP_Z_MAX, \
     TOP_Y_MIN,TOP_X_DIVISION,TOP_Y_DIVISION,TOP_Z_DIVISION
 from config import cfg
+import numpy.linalg 
 
 ##extension for 3d
 def top_to_lidar_coords(xx,yy):
@@ -47,10 +48,26 @@ def top_box_to_box3d(boxes):
         for k in range(4):
             xx,yy = points[k]
             x,y  = top_to_lidar_coords(xx,yy)
-            boxes3d[n,k,  :] = x,y, -2  ## <todo>  FIXME
-            boxes3d[n,4+k,:] = x,y,0.4
+            boxes3d[n,k,  :] = x,y, cfg.BOX3D_Z_MIN
+            boxes3d[n,4+k,:] = x,y, cfg.BOX3D_Z_MAX
 
     return boxes3d
+
+def lidar_to_camera_coords(x, y, z):
+    if (cfg.DATA_SETS_TYPE == 'kitti'):
+        ret = np.array([x, y, z, 1])
+        ret = np.matmul(np.array(cfg.MATRIX_T_VELO_2_CAM), ret)
+        ret = np.matmul(np.array(cfg.MATRIX_R_RECT_0), ret)
+        ret = ret[0:3]
+    return ret
+
+def camera_to_lidar_coords(x, y, z):
+    if (cfg.DATA_SETS_TYPE == 'kitti'):
+        ret = np.array([x, y, z, 1])
+        ret = np.matmul(np.linalg.inv(np.array(cfg.MATRIX_R_RECT_0)), ret)
+        ret = np.matmul(np.linalg.inv(np.array(cfg.MATRIX_T_VELO_2_CAM)), ret)
+        ret = ret[0:3]
+    return ret
 
 def box3d_in_top_view(boxes3d):
     # what if only some are outside of the range, but majorities are inside.
@@ -166,7 +183,6 @@ def box3d_to_camera_box3d(boxes3d):
             ret = np.matmul(ret, np.array(cfg.MATRIX_R_RECT_0).T)
             projections[n] = ret[:, 0:3]
         return projections
-
 
 def box3d_to_top_projections(boxes3d):
 
