@@ -65,7 +65,7 @@ def project_to_top_roi(rois3d):
     return rois
 
 def get_top_feature_shape(top_shape, stride):
-    return (top_shape[0]//stride, top_shape[1]//stride)
+    return (math.ceil(top_shape[0]/stride), math.ceil(top_shape[1]/stride))  # TODO: maybe wrong if top_shape always cannot be divided by stride
 
 def project_to_roi3d(top_rois):
     num = len(top_rois)    # rois3d = np.zeros((num,8,3))
@@ -165,7 +165,7 @@ class MV3D(object):
     def __init__(self, top_shape, front_shape, rgb_shape, debug_mode=False, log_tag=None, weigths_dir=None):
 
         # anchors
-        self.top_stride=None
+        self.top_rpn_stride=None
         self.num_class = 2  # incude background
 
         ratios=np.array([0.5,1,2], dtype=np.float32)
@@ -213,10 +213,10 @@ class MV3D(object):
                                  checkpoint_dir=self.ckpt_dir)
  
         # set anchor boxes
-        self.top_stride = self.net['top_feature_stride']
-        top_feature_shape = get_top_feature_shape(top_shape, self.top_stride)
+        self.top_rpn_stride = self.net['top_feature_rpn_stride']
+        top_feature_shape = get_top_feature_shape(top_shape, self.top_rpn_stride)
         # since we use RPN, now we should generate all the candidate anchors w.r.t. the size of the input image
-        self.top_view_anchors, self.anchors_inside_inds = make_anchors(self.bases, self.top_stride, top_shape[0:2], top_feature_shape[0:2])
+        self.top_view_anchors, self.anchors_inside_inds = make_anchors(self.bases, self.top_rpn_stride, top_shape[0:2], top_feature_shape[0:2])
         self.anchors_inside_inds = np.arange(0, len(self.top_view_anchors), dtype=np.int32)  # use all  #<todo>
 
         self.log_subdir = None
@@ -828,8 +828,8 @@ class Trainer(MV3D):
 
     def log_prediction(self, batch_top_view, batch_front_view, batch_rgb_images,
                        batch_gt_labels=None, batch_gt_boxes3d=None, print_iou=False,
-                       log_rpn=False, step=None, scope_name=''):
-        boxes3d, lables, _ = self.predict(batch_top_view, batch_front_view, batch_rgb_images)
+                       log_rpn=False, step=None, scope_name='', score_threshold=0.75):
+        boxes3d, lables, _ = self.predict(batch_top_view, batch_front_view, batch_rgb_images, score_threshold=score_threshold)
         self.predict_log(self.log_subdir,log_rpn=log_rpn, step=step, scope_name=scope_name, gt_boxes3d=batch_gt_boxes3d[0])  # FIXME onlu support batch_size(batch size == 1)
 
         if type(batch_gt_boxes3d)==np.ndarray and type(batch_gt_labels)==np.ndarray:
@@ -1121,7 +1121,7 @@ class Trainer(MV3D):
 
         if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
                                     batch_gt_labels, batch_gt_boxes3d, 
-                                    step=self.n_global_step, scope_name=scope_name, print_iou=True)
+                                    step=self.n_global_step, scope_name=scope_name, print_iou=True, score_threshold=cfg.RCNN_NMS_THRESHOLD)
         return t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss
 
 # predictor is used for testing

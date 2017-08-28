@@ -121,7 +121,7 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     keep   = np.append(fg_inds, fp_inds)
     rois   = extended_rois[keep]
     labels = labels[keep]                # Select sampled values from various arrays:
-    labels[fg_inds.size:] = 0  # Clamp la bels for the background RoIs to 0
+    labels[fg_inds.size:] = 0  # Clamp labels for the background RoIs to 0
 
 
     gt_boxes3d = gt_boxes3d[gt_assignment[keep]]

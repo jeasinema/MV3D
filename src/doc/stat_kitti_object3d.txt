@@ -75,9 +75,9 @@ al          1.72 --- 1.76
 ml          1.73 --- 1.76
 
 recept field:
-x: -25-25
-z:  0-80
-setting height for bbox: 1 and 2.4
+x: -25-25 -> +-25
+z:  0-80  -> +80
+setting height for bbox: 1 and 2.4  -> -1.02 - -2.52
 anchors:
 (3.9, 1.6)
 (1.6, 3.9)

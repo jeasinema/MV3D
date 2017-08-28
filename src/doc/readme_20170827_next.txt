@@ -13,3 +13,8 @@ So how about the fix?
 8. increase the training iterations.
 9. to design some structure for height regression
 10. pay attention to the sample amount, loss weight, pos/neg ratio when you enlarge the size of the RPN input. 
+11. since the lidar input is very sparse, you cannot require the RPN to give you accurate objectness result of each anchors, so we must lower the threshold of NMS in RPN stage
+12. just remove the RPN NMS during training, since if you do not train the RPN and the RCNN simultaneously, or so-called you train RPN first, there maybe noting can be regarded as negative sample in 2nd stage detector or just non-sense sample like the anchors in the road side
+13. add decov layer for the top view before proposal generation
+14. change the way you encode the front, now it seems that only 3.74% point is remained.....(most of the point occluded..)
+
