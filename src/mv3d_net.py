@@ -664,6 +664,7 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
     rcnn_reg_loss = tf.reduce_mean(tf.reduce_sum(rcnn_smooth_l1, axis=1))
     # remove nans(when there are no any bbox, the tf.reduce_mean will generate nan)
     rcnn_reg_loss = tf.where(tf.is_nan(rcnn_reg_loss), tf.zeros_like(rcnn_reg_loss), rcnn_reg_loss)
+    rcnn_cls_loss = tf.where(tf.is_nan(rcnn_cls_loss), tf.zeros_like(rcnn_cls_loss), rcnn_cls_loss)
 
     return rcnn_cls_loss, rcnn_reg_loss
 
@@ -706,6 +707,7 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
     rpn_reg_loss = tf.reduce_mean(tf.reduce_sum(rpn_smooth_l1, axis=1))
     # remove nans
     rpn_reg_loss = tf.where(tf.is_nan(rpn_reg_loss), tf.zeros_like(rpn_reg_loss), rpn_reg_loss)
+    rpn_cls_loss = tf.where(tf.is_nan(rpn_cls_loss), tf.zeros_like(rpn_cls_loss), rpn_cls_loss)
 
     return rpn_cls_loss, rpn_reg_loss
 

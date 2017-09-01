@@ -763,13 +763,13 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.top_cls_loss + 1 * self.top_reg_loss
+                    self.targets_loss += 1. * self.top_cls_loss + 0.5 * self.top_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.fuse_cls_loss + 1 * self.fuse_reg_loss
+                    self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
                 elif set([mv3d_net.fusion_net_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.fuse_cls_loss + 1 * self.fuse_reg_loss
+                    self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name, mv3d_net.frontfeature_net_name, mv3d_net.fusion_net_name]) == set(train_targets):
                     self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
