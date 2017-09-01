@@ -69,7 +69,7 @@ def top_feature_net(input, anchors, inds_inside, num_bases, nms_thresh):
     with tf.variable_scope('top-for-rpn') as scope:
         up   = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
         top_rpn_stride = stride/2
-        up      = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
+        up      = conv2d_bn_relu(up, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
         scores  = conv2d(up, num_kernels=2*num_bases, kernel_size=(1,1), stride=[1,1,1,1], padding='SAME', name='score')
         probs   = tf.nn.softmax( tf.reshape(scores,[-1,2]), name='prob')
         deltas  = conv2d(up, num_kernels=4*num_bases, kernel_size=(1,1), stride=[1,1,1,1], padding='SAME', name='delta')
@@ -84,7 +84,7 @@ def top_feature_net(input, anchors, inds_inside, num_bases, nms_thresh):
         img_scale = 1
         rois, roi_scores = tf_rpn_nms( probs, deltas, anchors, inds_inside,
                                        top_rpn_stride, img_width, img_height, img_scale,
-                                       nms_thresh=nms_thresh, min_size=top_rpn_stride, #nms_pre_topn=500, nms_post_topn=100,
+                                       nms_thresh=nms_thresh, min_size=top_rpn_stride, #nms_pre_topn=500, nms_post_topn=100, too less!
                                        name ='nms')
     feature = block
 
@@ -122,7 +122,7 @@ def top_feature_net_r(input, anchors, inds_inside, num_bases, nms_thresh):
     with tf.variable_scope('predict-for-rpn') as scope:
         up = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
         top_rpn_stride = stride/2
-        up = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3, 3), stride=[1, 1, 1, 1], padding='SAME', name='2')
+        up = conv2d_bn_relu(up, num_kernels=128, kernel_size=(3, 3), stride=[1, 1, 1, 1], padding='SAME', name='2')
         scores = conv2d(up, num_kernels=2 * num_bases, kernel_size=(1, 1), stride=[1, 1, 1, 1], padding='SAME',name='score')
         probs = tf.nn.softmax(tf.reshape(scores, [-1, 2]), name='prob')
         deltas = conv2d(up, num_kernels=4 * num_bases, kernel_size=(1, 1), stride=[1, 1, 1, 1], padding='SAME',name='delta')
@@ -136,7 +136,7 @@ def top_feature_net_r(input, anchors, inds_inside, num_bases, nms_thresh):
         img_scale = 1
         rois, roi_scores = tf_rpn_nms( probs, deltas, anchors, inds_inside,
                                        top_rpn_stride, img_width, img_height, img_scale,
-                                       nms_thresh=nms_thresh, min_size=top_tpn_stride, #nms_pre_topn=500, nms_post_topn=100,
+                                       nms_thresh=nms_thresh, min_size=top_rpn_stride, #nms_pre_topn=500, nms_post_topn=100,
                                        name ='nms')
 
     feature = block
@@ -478,6 +478,7 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
         num = len(feature_list)
         feature_names = ['top', 'front', 'rgb'] if cfg.USE_FRONT else ['top', 'rgb'] 
         roi_features_list = []
+        ctx_roi_features_list = []
         for n in range(num):
             feature = feature_list[n][0]
             roi = feature_list[n][1]
@@ -498,7 +499,7 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
 
                     block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3, 3), stride=[1, 1, 1, 1],
                                            padding='SAME',name=feature_names[n]+'_conv_2')+residual
-
+ 
                     block = avgpool(block, kernel_size=(2, 2), stride=[1, 2, 2, 1],
                                     padding='SAME', name=feature_names[n]+'_max_pool')
                 with tf.variable_scope('block2') as scope:
@@ -522,20 +523,95 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
                     block = avgpool(block, kernel_size=(2, 2), stride=[1, 2, 2, 1],
                                     padding='SAME', name=feature_names[n]+'_max_pool')
 
-
-                roi_features = flatten(block)
+                roi_features = flatten(block) # now roi_feture shape is (N, X)  N is the amount of rois
                 tf.summary.histogram(feature_names[n], roi_features)
                 roi_features_list.append(roi_features)
 
-        with tf.variable_scope('rois-feature-concat'):
-            block = concat(roi_features_list, axis=1, name='concat')
+            if cfg.USE_SIAMESE_FUSION:  # seperately introduce context info by enlarge the roi
+                def enlarge_roi(roi, ratio):
+                    #x1, y1, x2, y2 = roi[1:5]
+                    roi_T = tf.transpose(roi)
+                    x1 = tf.gather(roi_T, 1)
+                    y1 = tf.gather(roi_T, 2)
+                    x2 = tf.gather(roi_T, 3)
+                    y2 = tf.gather(roi_T, 4)
+                    center_x, center_y = (x1+x2)//2, (y1+y2)//2
+                    width, height = x2 - x1, y2 - y1
+                    new_width, new_height = tf.to_float(width)*ratio, tf.to_float(height)*ratio
+                    return tf.stack([
+                        tf.zeros_like(roi[:, 0]),
+                        center_x - new_width/2.,
+                        center_y - new_height/2.,
+                        center_x + new_width/2.,
+                        center_y + new_height/2.
+                    ], axis=1)
+
+                # ctx_pool_height, ctx_pool_width = cfg.ROI_ENLARGE_RATIO*(pool_height, pool_width)  ?? don't know If I shoud enlarge it.
+                ctx_pool_height, ctx_pool_width = pool_height, pool_width
+                ctx_roi = enlarge_roi(roi, cfg.ROI_ENLARGE_RATIO)
+                with tf.variable_scope(feature_names[n] + '-roi-pooling-ctx'):
+                    ctx_roi_features, ctx_roi_idxs = tf_roipooling(feature, ctx_roi, ctx_pool_height, ctx_pool_width,
+                                                       pool_scale, name='%s-roi_pooling-ctx' % feature_names[n])
+                with tf.variable_scope(feature_names[n]+ '-feature-conv-ctx'):
+
+                    with tf.variable_scope('block1-ctx') as scope:
+                        block = conv2d_bn_relu(ctx_roi_features, num_kernels=128, kernel_size=(3, 3),
+                                               stride=[1, 1, 1, 1], padding='SAME',name=feature_names[n]+'_conv_1-ctx')
+                        residual=block
+
+                        block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(3, 3), stride=[1, 1, 1, 1],
+                                               padding='SAME',name=feature_names[n]+'_conv_2-ctx')+residual
+     
+                        block = avgpool(block, kernel_size=(2, 2), stride=[1, 2, 2, 1],
+                                        padding='SAME', name=feature_names[n]+'_max_pool-ctx')
+                    with tf.variable_scope('block2-ctx') as scope:
+
+                        block = conv2d_bn_relu(block, num_kernels=256, kernel_size=(3, 3), stride=[1, 1, 1, 1], padding='SAME',
+                                               name=feature_names[n]+'_conv_1-ctx')
+                        residual = block
+                        block = conv2d_bn_relu(block, num_kernels=256, kernel_size=(3, 3), stride=[1, 1, 1, 1], padding='SAME',
+                                               name=feature_names[n]+'_conv_2-ctx')+residual
+
+                        block = avgpool(block, kernel_size=(2, 2), stride=[1, 2, 2, 1],
+                                        padding='SAME', name=feature_names[n]+'_max_pool-ctx')
+                    with tf.variable_scope('block3-ctx') as scope:
+
+                        block = conv2d_bn_relu(block, num_kernels=512, kernel_size=(3, 3), stride=[1, 1, 1, 1], padding='SAME',
+                                               name=feature_names[n]+'_conv_1-ctx')
+                        residual = block
+                        block = conv2d_bn_relu(block, num_kernels=512, kernel_size=(3, 3), stride=[1, 1, 1, 1], padding='SAME',
+                                               name=feature_names[n]+'_conv_2-ctx')+residual
+
+                        block = avgpool(block, kernel_size=(2, 2), stride=[1, 2, 2, 1],
+                                        padding='SAME', name=feature_names[n]+'_max_pool-ctx')
+                        ctx_roi_features = flatten(block)
+                        tf.summary.histogram(feature_names[n], ctx_roi_features)
+                        ctx_roi_features_list.append(ctx_roi_features)
+        
+        if cfg.USE_SIAMESE_FUSION:
+            # now the shape of (ctx_)roi_features_list is (3(2), N, X)
+            roi_feature_list = concat([roi_features_list, ctx_roi_features_list], axis=2, name='concat_ctx_roi_feature')
+
+        with tf.variable_scope('rois-without-rgb-feature-concat'):
+            block_without_rgb = concat(roi_features_list[0:2] if cfg.USE_FRONT else roi_features_list[0], axis=1, name='concat_without_rgb')
+
+        with tf.variable_scope('fusion-without-rgb-feature-fc'):
+            block_without_rgb = linear_bn_relu(block_without_rgb, num_hiddens=512, name='1')
+            block_without_rgb = linear_bn_relu(block_without_rgb, num_hiddens=512, name='2')
+            if cfg.USE_SIAMESE_FUSION:
+                block_without_rgb = linear_bn_relu(block_without_rgb, num_hiddens=512, name='3')  # add an extra dense layer for siamese feature mixed
+
+        with tf.variable_scope('rois-all-feature-concat'):
+            block = concat(roi_features_list, axis=1, name='concat') # since roi_feature_list is not Tensor, so the output shape is (N, 3(2)*X)
 
         with tf.variable_scope('fusion-feature-fc'):
             print('\nUse fusion-feature-2fc')
             block = linear_bn_relu(block, num_hiddens=512, name='1')
             block = linear_bn_relu(block, num_hiddens=512, name='2')
+            if cfg.USE_SIAMESE_FUSION:
+                block = linear_bn_relu(block, num_hiddens=512, name='3')
 
-    return  block
+    return  block_without_rgb, block
 
 
 def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
@@ -563,12 +639,12 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
 
     with tf.variable_scope('get_scores'):
         rcnn_scores   = tf.reshape(scores,[-1, num_class], name='rcnn_scores')
-        pos_inds = tf.where(rcnn_labels != 0)
+        pos_inds = tf.where(tf.not_equal(rcnn_labels, 0), name='pos_inds')
         rcnn_cls_loss_pos = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=tf.gather(rcnn_scores, pos_inds), labels=tf.gather(rcnn_labels, pos_inds)))
         rcnn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=rcnn_scores, labels=rcnn_labels))
-        rcnn_cls_loss = tf.add(tf.multiply(rcnn_cls_loss_pos, 5.0-1), tf.multiply(rcnn_cls_loss_all, 1))
+        rcnn_cls_loss = tf.add(tf.multiply(rcnn_cls_loss_pos, 2.0-0.2), tf.multiply(rcnn_cls_loss_all, 0.2))
 
     with tf.variable_scope('get_detals'):
         num = tf.identity( tf.shape(deltas)[0], 'num')
@@ -586,7 +662,7 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
         rcnn_smooth_l1 = modified_smooth_l1(rcnn_deltas_no_fp, rcnn_targets_no_fp, sigma=3.0)
 
     rcnn_reg_loss = tf.reduce_mean(tf.reduce_sum(rcnn_smooth_l1, axis=1))
-    # remove nans
+    # remove nans(when there are no any bbox, the tf.reduce_mean will generate nan)
     rcnn_reg_loss = tf.where(tf.is_nan(rcnn_reg_loss), tf.zeros_like(rcnn_reg_loss), rcnn_reg_loss)
 
     return rcnn_cls_loss, rcnn_reg_loss
@@ -619,7 +695,7 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
 
     rpn_cls_loss_pos = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores_pos, labels=rpn_labels_pos))
     rpn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores, labels=rpn_labels))
-    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 5.0-0.05), tf.multiply(rpn_cls_loss_all, 0.05))
+    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 2.0-0.2), tf.multiply(rpn_cls_loss_all, 0.2))
 
     deltas1       = tf.reshape(deltas,[-1,4])
     rpn_deltas    = tf.gather(deltas1, pos_inds)  # remove ignore label
@@ -637,8 +713,6 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
     out_shape = (8, 3)
     stride = 8
-
-    rpn_nms_threshold = tf.placeholder(shape=None, dtype=tf.float32, name='rpn_nms_threshold')
 
     top_anchors = tf.placeholder(shape=[None, 4], dtype=tf.int32, name='anchors')
     top_inside_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='inside_inds')
@@ -660,10 +734,10 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         # top feature
         if cfg.USE_RESNET_AS_TOP_BASENET==True:
             top_features, top_scores, top_probs, top_deltas, proposals, proposal_scores, top_feature_rpn_stride, top_feature_rcnn_stride = \
-                top_feature_net_r(top_view, top_anchors, top_inside_inds, len_bases, rpn_nms_threshold)
+                top_feature_net_r(top_view, top_anchors, top_inside_inds, len_bases, cfg.RPN_NMS_THRESHOLD)
         else:
             top_features, top_scores, top_probs, top_deltas, proposals, proposal_scores, top_feature_rpn_stride, top_feature_rcnn_stride = \
-                top_feature_net(top_view, top_anchors, top_inside_inds, len_bases, rpn_nms_threshold)
+                top_feature_net(top_view, top_anchors, top_inside_inds, len_bases, cfg.RPN_NMS_THRESHOLD)
 
         with tf.variable_scope('loss'):
             # RPN
@@ -699,55 +773,148 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     #     tf.summary.image('roi_rgb',roi_rgb)
 
     with tf.variable_scope(fusion_net_name) as scope:
-        if cfg.IMAGE_FUSION_DIABLE==True:
-            fuse_output = fusion_net(
-                    ([top_features, top_rois, 6, 6, 1. / top_feature_rcnn_stride],
+        if cfg.IMAGE_FUSION_DISABLE==True:
+            fuse_output_without_rgb, fuse_output_with_rgb = fusion_net(
+                    ([top_features, top_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / top_feature_rcnn_stride],
                      [front_features, front_rois, 0, 0, 1. / front_stride],  # disable by 0,0
-                     [rgb_features, rgb_rois*0, 6, 6, 1. / rgb_stride],),
+                     [rgb_features, rgb_rois*0, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / rgb_stride],),
                     num_class, out_shape)
             print('\n\n!!!! disable image fusion\n\n')
 
         elif 0:
             # for test
-            fuse_output = fusion_net(
-                    ([top_features, top_rois*0, 6, 6, 1. / top_feature_rcnn_stride],
-                     [front_features, front_rois, 0, 0, 1. / front_stride],  # disable by 0,0
-                     [rgb_features, rgb_rois, 6, 6, 1. / rgb_stride],),
+            fuse_output_without_rgb, fuse_output_with_rgb = fusion_net(
+                    ([top_features, top_rois*0, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / top_feature_rcnn_stride],
+                     [front_features, front_rois, cfg.ROI_POOLING_HEIGHT, 0, 1. / front_stride],  # disable by 0,0
+                     [rgb_features, rgb_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / rgb_stride],),
                     num_class, out_shape)
             print('\n\n!!!! disable top view fusion\n\n')
 
         else:
             if cfg.USE_FRONT:
-                fuse_output = fusion_net(
-                    ([top_features, top_rois, 6, 6, 1. / top_feature_rcnn_stride],
-                     [front_features, front_rois, 0, 0, 1. / front_stride],  # disable by 0,0
-                     [rgb_features, rgb_rois, 6, 6, 1. / rgb_stride],),
+                fuse_output_without_rgb, fuse_output_with_rgb = fusion_net(
+                    ([top_features, top_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / top_feature_rcnn_stride],
+                     [front_features, front_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / front_stride],  # disable by 0,0
+                     [rgb_features, rgb_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / rgb_stride],),
                     num_class, out_shape)
             else:
-               fuse_output = fusion_net(
-                    ([top_features, top_rois, 6, 6, 1. / top_feature_rcnn_stride],
-                     [rgb_features, rgb_rois, 6, 6, 1. / rgb_stride],),
+                fuse_output_without_rgb, fuse_output_with_rgb = fusion_net(
+                    ([top_features, top_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / top_feature_rcnn_stride],
+                     [rgb_features, rgb_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / rgb_stride],),
                     num_class, out_shape) 
 
 
         # include background class
-        with tf.variable_scope('predict') as scope:
+        if cfg.USE_HANDCRAFT_FUSION or cfg.USE_LEARNABLE_FUSION:
+            with tf.variable_scope('predict-without-rgb'):
+                dim = np.product([*out_shape])
+                fuse_scores_without_rgb = linear(fuse_output_without_rgb, num_hiddens=num_class, name='score')  # input shape is [N, X](just see what fusion_net and flatten do)
+                fuse_probs_without_rgb = tf.nn.softmax(fuse_scores_without_rgb, name='prob')  # fuse_prob is [N, 2]
+                fuse_deltas_without_rgb = linear_bn_relu(fuse_output_without_rgb, num_hiddens=256, name='box_1')
+                fuse_deltas_without_rgb = linear_bn_relu(fuse_output_without_rgb, num_hiddens=256, name='box_2')
+                fuse_deltas_without_rgb = linear(fuse_output_without_rgb, num_hiddens=dim * num_class, name='box_3') # now is [N, dim*num_class]
+                fuse_deltas_without_rgb = tf.reshape(fuse_deltas_without_rgb, (-1, num_class, *out_shape)) # now is [N, num_class, 8, 3]
+
+        with tf.variable_scope('predict-with-rgb') as scope:
             dim = np.product([*out_shape])
             # here is the output of fusenet(final output), since here it used the 
             # num_class, so it can just classify the car and the background
-            fuse_scores = linear(fuse_output, num_hiddens=num_class, name='score')
-            fuse_probs = tf.nn.softmax(fuse_scores, name='prob')
-            fuse_deltas = linear_bn_relu(fuse_output, num_hiddens=256, name='box_1')
-            fuse_deltas = linear_bn_relu(fuse_output, num_hiddens=256, name='box_2')
-            fuse_deltas = linear(fuse_output, num_hiddens=dim * num_class, name='box_3')
-            fuse_deltas = tf.reshape(fuse_deltas, (-1, num_class, *out_shape))
+            fuse_scores_with_rgb = linear(fuse_output_with_rgb, num_hiddens=num_class, name='score')
+            fuse_probs_with_rgb = tf.nn.softmax(fuse_scores_with_rgb, name='prob')
+            fuse_deltas_with_rgb = linear_bn_relu(fuse_output_with_rgb, num_hiddens=256, name='box_1')
+            fuse_deltas_with_rgb = linear_bn_relu(fuse_output_with_rgb, num_hiddens=256, name='box_2')
+            fuse_deltas_with_rgb = linear(fuse_output_with_rgb, num_hiddens=dim * num_class, name='box_3')
+            fuse_deltas_with_rgb = tf.reshape(fuse_deltas_with_rgb, (-1, num_class, *out_shape))
+
+        # output concat
+        # 9->2 conditions:
+        # H: cls>0.9 L: cls<0.3
+        # No-RGB    RGB    REG    CLS
+        #    H       x     max's  max's
+        #    x       H     max's  max's
+        #    -       -     mean   mean
+        with tf.variable_scope('predict-fuse') as scope:
+            dim = np.product([*out_shape])
+            if cfg.USE_HANDCRAFT_FUSION:
+                max_op_mask = tf.logical_or(
+                    cfg.HIGH_SCORE_THRESHOLD < fuse_probs_with_rgb, # score is not allowded here
+                    cfg.HIGH_SCORE_THRESHOLD < fuse_probs_without_rgb
+                )
+                max_mask = fuse_probs_with_rgb > fuse_probs_without_rgb
+
+                fuse_probs = tf.map_fn(lambda x: tf.cond(
+                    max_op_mask[x],
+                    lambda: tf.cond(
+                        max_mask[x],
+                        lambda: fuse_probs_with_rgb[x],
+                        lambda: fuse_probs_without_rgb[x]
+                    ),
+                    lambda: tf.reduce_mean([fuse_probs_with_rgb[x], fuse_probs_without_rgb[x]], axis=0),
+                ), tf.range(fuse_scores_with_rgb.shape[0]), dtype=tf.float32)
+                
+                # fuse_score is not available here since we cannot cal mean for 2 scores without softmax
+                # TODO: for convinience, just use fuse_score here
+                fuse_scores = tf.map_fn(lambda x: tf.cond(
+                    max_op_mask[x],
+                    lambda: tf.cond(
+                        max_mask[x],
+                        lambda: fuse_scores_with_rgb[x],
+                        lambda: fuse_scores_without_rgb[x]
+                    ),
+                    lambda: tf.reduce_mean([fuse_probs_with_rgb[x], fuse_probs_without_rgb[x]], axis=0)* \
+                        tf.sqrt(
+                            tf.multiply(
+                                tf.reduce_sum(
+                                    tf.div(fuse_scores_with_rgb[x], fuse_probs_with_rgb[x])
+                                ),
+                                tf.reduce_sum(
+                                    tf.div(fuse_scores_without_rgb[x], fuse_probs_without_rgb[x])
+                                )
+                            )
+                        )
+                ), tf.range(fuse_scores_with_rgb.shape[0]), dtype=tf.float32)
+
+                fuse_deltas = tf.map_fn(lambda x: tf.cond(  # TODO for correct axis
+                    max_op_mask[x],
+                    lambda: tf.cond(
+                        max_mask[x],
+                        lambda: fuse_deltas_with_rgb[x],
+                        lambda: fuse_deltas_without_rgb[x]
+                    ),
+                    lambda: tf.reduce_mean([fuse_deltas_with_rgb[x], fuse_deltas_without_rgb[x]], axis=0),
+                ), tf.range(fuse_scores_with_rgb.shape[0]), dtype=tf.float32)
+                fuse_deltas = tf.reshape(fuse_deltas, (-1, num_class, *out_shape))
+            elif cfg.USE_LEARNABLE_FUSION:
+                fuse_scores = linear(concat([fuse_scores_with_rgb, fuse_scores_without_rgb], axis=1), num_hiddens=num_class, name='fuse_scores')
+                fuse_probs = linear(concat([fuse_probs_with_rgb, fuse_probs_without_rgb], axis=1), num_hiddens=num_class, name='fuse_probs')
+                fuse_deltas = linear_bn_relu(concat([
+                    tf.reshape(fuse_deltas_with_rgb, (-1, dim * num_class)), 
+                    tf.reshape(fuse_deltas_without_rgb, (-1, dim * num_class))
+                ], axis=1), num_hiddens=dim*num_class, name='fuse_deltas')
+                fuse_deltas = tf.reshape(fuse_deltas, (-1, num_class, *out_shape))
+            else:
+                fuse_scores =  fuse_scores_without_rgb = fuse_scores_with_rgb
+                fuse_probs = fuse_probs_without_rgb = fuse_probs_with_rgb
+                fuse_deltas = fuse_deltas_without_rgb = fuse_deltas_with_rgb
 
         with tf.variable_scope('loss') as scope:
             fuse_labels = tf.placeholder(shape=[None], dtype=tf.int32, name='fuse_label')
             fuse_targets = tf.placeholder(shape=[None, *out_shape], dtype=tf.float32, name='fuse_target')
             # in this implementation, it does not do NMS at final step, so the only NMS is done before fusenet(using score from PRN)
             # no, the line above is not correct, just see function 'predict' in mv3d.py, it does nms at final step.
-            fuse_cls_loss, fuse_reg_loss = fuse_loss(fuse_scores, fuse_deltas, fuse_labels, fuse_targets)
+            with tf.variable_scope('loss-fuse'):
+                fuse_cls_loss, fuse_reg_loss = fuse_loss(fuse_scores, fuse_deltas, fuse_labels, fuse_targets)
+
+            if cfg.USE_HANDCRAFT_FUSION or cfg.USE_LEARNABLE_FUSION:
+                with tf.variable_scope('loss-with-rgb'):
+                    fuse_cls_loss_with_rgb, fuse_reg_loss_with_rgb = fuse_loss(fuse_scores_with_rgb, fuse_deltas_with_rgb, fuse_labels, fuse_targets)
+
+                with tf.variable_scope('loss-without-rgb'):
+                    fuse_cls_loss_without_rgb, fuse_reg_loss_without_rgb = fuse_loss(fuse_scores_without_rgb, fuse_deltas_without_rgb, fuse_labels, fuse_targets)
+            else:
+                fuse_cls_loss_with_rgb = fuse_cls_loss_without_rgb = fuse_cls_loss 
+                fuse_reg_loss_with_rgb = fuse_reg_loss_without_rgb = fuse_reg_loss 
+
 
     # with tf.variable_scope(conv3d_net_name) as scope:
     #     if cfg.USE_CONV3D:
@@ -767,8 +934,6 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
 
     return {
-        'rpn_nms_threshold':rpn_nms_threshold,
-
         'top_anchors':top_anchors,
         'top_inside_inds':top_inside_inds,
         'top_view':top_view,
@@ -782,6 +947,10 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         'top_reg_loss': top_reg_loss,
         'fuse_cls_loss': fuse_cls_loss,
         'fuse_reg_loss': fuse_reg_loss,
+        'fuse_cls_loss_with_rgb' : fuse_cls_loss_with_rgb,
+        'fuse_reg_loss_with_rgb' : fuse_reg_loss_with_rgb,
+        'fuse_cls_loss_without_rgb' : fuse_cls_loss_without_rgb,
+        'fuse_reg_loss_without_rgb' : fuse_reg_loss_without_rgb,
 
         'top_features': top_features,
         'top_scores': top_scores,
@@ -800,8 +969,16 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         'fuse_targets':fuse_targets,
 
         'fuse_probs':fuse_probs,
-        'fuse_scores':fuse_scores,
+        'fuse_scores':fuse_scores,  # useless, unnormalized
         'fuse_deltas':fuse_deltas,
+
+        'fuse_probs_with_rgb': fuse_probs_with_rgb,
+        'fuse_scores_with_rgb': fuse_scores_with_rgb,
+        'fuse_deltas_with_rgb': fuse_deltas_with_rgb,
+        
+        'fuse_probs_without_rgb': fuse_probs_without_rgb,
+        'fuse_scores_without_rgb': fuse_scores_without_rgb,
+        'fuse_deltas_without_rgb': fuse_deltas_without_rgb,
 
         'top_feature_rpn_stride':top_feature_rpn_stride
 

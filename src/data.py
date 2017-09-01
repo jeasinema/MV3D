@@ -94,8 +94,8 @@ class Preprocess(object):
         r += int(cfg.FRONT_R_OFFSET)
 
         ## FIXME simply /2 for resize
-        c //= 2
-        r //= 2
+        #c //= 2
+        #r //= 2
 
         channel = 3 # height, distance, intencity
         front = np.zeros((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, channel+1), dtype=np.float32)
@@ -151,7 +151,7 @@ class Preprocess(object):
 
         points[:, 0] += int(cfg.FRONT_C_OFFSET)
         points[:, 1] += int(cfg.FRONT_R_OFFSET)
-        points //= 2
+        #points //= 2
 
         ind = np.where(0 <= points[:, 0])
         points, lidar = points[ind], lidar[ind]
@@ -180,6 +180,27 @@ class Preprocess(object):
 
 proprocess = Preprocess()
 
+
+def kitti_label_to_lidar_box3d(label, object_type='Car'):
+    # input: A list of lines in single Kitti label file
+    # output: [1, N, 8, 3]
+    ret = []
+    for t in [['Car', 'Van'],['Pedestrian'], ['Cyclist']]:
+        if object_type in t:
+            category = t 
+            break
+    else:
+        return np.array([ret])
+    
+    for line in label:
+        line = line.split()
+        obj = line[0]
+        if obj in category: #or obj == 'Tram' or obj == 'Truck':
+            h, w, l, x, y, z, ry = [float(i) for i in line[8:15]]
+            h, w, l, x, y, z, rz = h, w, l, *camera_to_lidar_coords(x, y, z), -ry-math.pi/2
+            gt_box3d = box3d_compose((x, y, z), (h, w, l), (0, 0, rz))
+            ret.append(gt_box3d)
+    return np.array([ret])
 
 
 def filter_center_car(lidar):

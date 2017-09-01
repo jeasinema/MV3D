@@ -587,7 +587,7 @@ class KittiLoading(object):
             self.rgb_shape = tmp[1].shape
         except:
             # FIXME
-            self.top_shape = (400, 400, 10)
+            self.top_shape = (800, 500, 10)
             self.front_shape = (cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3)
             self.rgb_shape = (cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH, 3)
 
@@ -601,6 +601,9 @@ class KittiLoading(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.work_exit = True
+
+    def __len__(self):
+        return self.dataset_size
 
     def fill_queue(self, max_load_amount=0):
         
@@ -624,8 +627,14 @@ class KittiLoading(object):
                 rgb = self.preprocess.rgb(cv2.imread(self.f_rgb[self.load_index]))
                 raw_lidar = np.fromfile(self.f_lidar[self.load_index], dtype=np.float32).reshape((-1, 4))
                 if self.use_precal_view:
-                    top_view = np.load(self.f_top[self.load_index])
-                    front_view = np.load(self.f_front[self.load_index])
+                    try:
+                        top_view = np.load(self.f_top[self.load_index])
+                    except:
+                        top_view = self.preprocess.lidar_to_top(raw_lidar)
+                    try:
+                        front_view = np.load(self.f_front[self.load_index])
+                    except:
+                        front_view = self.preprocess.lidar_to_front_fast(raw_lidar)
                 else: 
                     top_view = self.preprocess.lidar_to_top(raw_lidar)
                 # top_view = np.ones((400, 400, 10), dtype=np.float32)

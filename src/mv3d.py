@@ -179,9 +179,9 @@ class MV3D(object):
         # )
         # Now using the anchors in mv3d
         self.bases = np.array([
-            [4.5, 2.5, 10.5, 12.5],
+            [4.5, 2.5, 10.5, 12.5],# (1.0, 0.6)
             [2.5, 4.5, 12.5, 10.5],
-            [-0.5, -12, 15.5, 27],
+            [-0.5, -12, 15.5, 27], #(3.9, 1.6)
             [-12, -0.5, 27, 15.5]
         ])
 
@@ -190,11 +190,14 @@ class MV3D(object):
         self.log_msg = utilfile.Logger(cfg.LOG_DIR + '/log.txt', mode='a')
         self.track_log = utilfile.Logger(cfg.LOG_DIR + '/tracking_log.txt', mode='a')
 
-        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=cfg.GPU_MEMORY_FRACTION, visible_device_list=cfg.GPU_USE)
+        self.gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=cfg.GPU_MEMORY_FRACTION, visible_device_list=cfg.GPU_AVAILABLE)
 
         # creat sesssion
         self.sess = tf.Session(config=tf.ConfigProto(
-            gpu_options=self.gpu_options
+            gpu_options=self.gpu_options,
+            device_count={
+                "GPU" : cfg.GPU_USE_COUNT           
+            }
         ))
         self.use_pretrain_weights=[]
 
@@ -264,7 +267,6 @@ class MV3D(object):
         self.rgb_image = rgb_image
         self.front_view = front_view
         fd1 = {
-            self.net['rpn_nms_threshold']: cfg.RPN_NMS_THRESHOLD,
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
             self.net['top_inside_inds']: self.anchors_inside_inds,
@@ -296,10 +298,20 @@ class MV3D(object):
 
         }
 
-        self.fuse_probs, self.fuse_deltas = \
-            self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd2)
+        self.fuse_probs, self.fuse_deltas, \
+        self.fuse_probs_with_rgb, self.fuse_deltas_with_rgb, \
+        self.fuse_probs_without_rgb, self.fuse_deltas_without_rgb = \
+            self.sess.run([
+                self.net['fuse_probs'], self.net['fuse_deltas'], 
+                self.net['fuse_probs_with_rgb'], self.net['fuse_deltas_with_rgb'],
+                self.net['fuse_probs_without_rgb'], self.net['fuse_deltas_without_rgb']
+            ], fd2)
 
         self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=score_threshold)
+        self.probs_with_rgb, self.boxes3d_with_rgb = rcnn_nms(self.fuse_probs_with_rgb, self.fuse_deltas_with_rgb, self.rois3d, 
+            score_threshold=score_threshold)
+        self.probs_without_rgb, self.boxes3d_without_rgb = rcnn_nms(self.fuse_probs_without_rgb, self.fuse_deltas_without_rgb, self.rois3d, 
+            score_threshold=score_threshold)
         return self.boxes3d, self.lables, self.probs
 
 
@@ -314,7 +326,6 @@ class MV3D(object):
         self.rgb_image = rgb_image
         self.front_view = front_view
         fd1 = {
-            self.net['rpn_nms_threshold']: cfg.RPN_NMS_THRESHOLD,
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
             self.net['top_inside_inds']: self.anchors_inside_inds,
@@ -346,10 +357,22 @@ class MV3D(object):
 
         }
 
-        self.fuse_probs, self.fuse_deltas = \
-            self.sess.run([self.net['fuse_probs'], self.net['fuse_deltas']], fd2)
+        self.fuse_probs, self.fuse_deltas, \
+        self.fuse_probs_with_rgb, self.fuse_deltas_with_rgb, \
+        self.fuse_probs_without_rgb, self.fuse_deltas_without_rgb = \
+            self.sess.run([
+                self.net['fuse_probs'], self.net['fuse_deltas'], 
+                self.net['fuse_probs_with_rgb'], self.net['fuse_deltas_with_rgb'],
+                self.net['fuse_probs_without_rgb'], self.net['fuse_deltas_without_rgb']
+            ], fd2)
 
         self.probs, self.boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas, self.rois3d, score_threshold=score_threshold)
+        if cfg.USE_LEARNABLE_FUSION or cfg.USE_HANDCRAFT_FUSION:
+            self.probs_with_rgb, self.boxes3d_with_rgb = rcnn_nms(self.fuse_probs_with_rgb, self.fuse_deltas_with_rgb, self.rois3d, 
+                score_threshold=score_threshold)
+            self.probs_without_rgb, self.boxes3d_without_rgb = rcnn_nms(self.fuse_probs_without_rgb, self.fuse_deltas_without_rgb, self.rois3d, 
+                score_threshold=score_threshold)
+
         return self.boxes3d, self.lables, self.probs
 
     # this is used for testing
@@ -395,10 +418,23 @@ class MV3D(object):
         self.top_image = self.top_image_padding(self.top_image)
         if log_rpn: self.log_rpn(step=step ,scope_name=scope_name)
         self.log_fusion_net_detail(log_subdir, self.fuse_probs, self.fuse_deltas)
+
+        # for fuse_boxes
         text_lables = ['No.%d class:1 prob: %.4f' % (i, prob) for i, prob in enumerate(self.probs)]
-        predict_camera_view = nud.draw_box3d_on_camera(self.rgb_image[0], self.boxes3d, text_lables=text_lables)
-   
-        predict_top_view = data.draw_box3d_on_top(self.top_image, self.boxes3d)
+        predict_camera_view = nud.draw_box3d_on_camera(self.rgb_image[0], self.boxes3d, text_lables=text_lables, color=(255,0,255))
+        predict_top_view = data.draw_box3d_on_top(self.top_image, self.boxes3d, color=(255,0,255))
+    
+        if cfg.USE_LEARNABLE_FUSION or cfg.USE_HANDCRAFT_FUSION:
+            # for fuse_boxes_without_rgb
+            text_lables = ['No.%d class:1 prob: %.4f' % (i, prob) for i, prob in enumerate(self.probs_without_rgb)]
+            predict_camera_view = nud.draw_box3d_on_camera(predict_camera_view, self.boxes3d_without_rgb, text_lables=text_lables, color=(0,255,0))
+            predict_top_view = data.draw_box3d_on_top(predict_top_view, self.boxes3d_without_rgb, color=(0,255,0))
+
+            # for fuse_boxes_with_rgb
+            text_lables = ['No.%d class:1 prob: %.4f' % (i, prob) for i, prob in enumerate(self.probs_with_rgb)]
+            predict_camera_view = nud.draw_box3d_on_camera(predict_camera_view, self.boxes3d_with_rgb, text_lables=text_lables, color=(0,0,255))
+            predict_top_view = data.draw_box3d_on_top(predict_top_view, self.boxes3d_with_rgb, color=(0,0,255))
+
 
         # draw gt on camera and top view:
         if len(gt_boxes3d) > 0: # array size > 1 cannot directly used in if
@@ -730,7 +766,7 @@ class Trainer(MV3D):
                     self.targets_loss += 1. * self.top_cls_loss + 1 * self.top_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.fuse_cls_loss + 0.05 * self.fuse_reg_loss
+                    self.targets_loss += 1. * self.fuse_cls_loss + 1 * self.fuse_reg_loss
 
                 elif set([mv3d_net.fusion_net_name]) == set(train_targets):
                     self.targets_loss += 1. * self.fuse_cls_loss + 1 * self.fuse_reg_loss
@@ -828,6 +864,7 @@ class Trainer(MV3D):
         self.summary_image(front_img, scope_name+'/fusion_target_front', step=self.n_global_step)  #FIXME(transpose and reverse)
 
 
+    # this is only used by fit_iteration
     def log_prediction(self, batch_top_view, batch_front_view, batch_rgb_images,
                        batch_gt_labels=None, batch_gt_boxes3d=None, print_iou=False,
                        log_rpn=False, step=None, scope_name='', score_threshold=0.75):
@@ -896,7 +933,7 @@ class Trainer(MV3D):
             init_step = self.n_global_step
             try:
                 for iter in range(init_step, init_step+max_iter):
-                    self.log_msg.write('Current epoch/Total epoch: {}/{}\n'.format(iter, init_step+max_iter))
+                    self.log_msg.write('Current iterations/Total iterations: {}/{}\n'.format(iter, init_step+max_iter))
 
                     is_validation = False
                     summary_it = False
@@ -974,7 +1011,10 @@ class Trainer(MV3D):
                 if cfg.TRAINING_TIMER:
                     self.log_msg.write('It takes %0.2f secs to train until now. \n' % \
                                    (time_it.total_time()))
-                self.save_progress()
+                try:
+                    self.save_progress()
+                except:
+                    self.save_progress()
                 sys.exit()
 
 
@@ -1007,7 +1047,6 @@ class Trainer(MV3D):
 
         ## run propsal generation
         fd1 = {
-            net['rpn_nms_threshold']: cfg.RPN_NMS_THRESHOLD_TRAINING,
             net['top_view']: batch_top_view,
             net['top_anchors']: self.top_view_anchors,
             net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
@@ -1203,6 +1242,61 @@ class Tester_RPN(MV3D):
         scope_name = 'predict_%d_%d' % (n_start, n_end)
         self.predict_log(log_subdir=log_subdir,log_rpn=True, step=n_frame,scope_name=scope_name)
 
+class Tester_RPN_Target(MV3D):
+    def __init__(self, top_shape, front_shape, rgb_shape, weight_dir=None, log_tag=None, weights_tag=None, weights_name='default'):
+        #weigths_dir= os.path.join(cfg.CHECKPOINT_DIR, weights_tag) if weights_tag!=None  else None
+        self.top_shape = top_shape
+        self.weight_dir = weight_dir
+        MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag, weigths_dir=self.weight_dir)
+        self.variables_initializer()
+        self.load_weights([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name, mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])
 
+        tb_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_tracking')
+        self.default_summary_writer = tf.summary.FileWriter(tb_dir)
+        self.n_log_scope = 0
+        self.n_max_log_per_scope= 10
+
+    def anchors_details(self):
+        pos_indes=self.batch_top_pos_inds
+        top_inds=self.batch_top_inds
+        return 'anchors: positive= {} total= {}\n'.format(len(pos_indes), len(top_inds))
+
+    def __call__(self, top_view, front_view, rgb_image, bases, gt_boxes3d = [], gt_labels = []):
+        self.lables = []  # todo add lables output
+
+        self.top_view = top_view
+        self.rgb_image = rgb_image
+        self.front_view = front_view
+
+        self.bases = bases
+
+        self.batch_gt_boxes3d = gt_boxes3d
+        self.batch_gt_labels = gt_labels
+        if len(gt_boxes3d) > 0:
+            self.batch_gt_top_boxes = data.box3d_to_top_box(self.batch_gt_boxes3d[0])
+
+        # set anchor boxes
+        self.top_rpn_stride = self.net['top_feature_rpn_stride']
+        top_feature_shape = get_top_feature_shape(self.top_shape, self.top_rpn_stride)
+        # since we use RPN, now we should generate all the candidate anchors w.r.t. the size of the input image
+        self.top_view_anchors, self.anchors_inside_inds = make_anchors(self.bases, self.top_rpn_stride, self.top_shape[0:2], top_feature_shape[0:2])
+        self.anchors_inside_inds = np.arange(0, len(self.top_view_anchors), dtype=np.int32)  # use all  #<todo>
+
+        self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
+            rpn_target(self.top_view_anchors, self.anchors_inside_inds, self.batch_gt_labels[0],
+                       self.batch_gt_top_boxes)
+
+        # logger
+        top_image = data.draw_top_image(self.top_view[0])
+        top_image = self.top_image_padding(top_image)
+        img_label = draw_rpn_labels(top_image, self.top_view_anchors, self.batch_top_inds, self.batch_top_labels)
+        cv2.putText(img_label, self.anchors_details(), (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 1, cv2.LINE_AA)
+        self.summary_image(img_label, 'test_rpn_target/img_rpn_label', step=0) # negative(gray) and positive(dark blue) samples(no delta) for RPN
+
+        img_gt = draw_rpn_gt(top_image, self.batch_gt_top_boxes, self.batch_gt_labels)
+        self.summary_image(img_gt, 'test_rpn_target/img_rpn_gt', step=0)  #just RPN gt
+        self.summary_image(img_gt, 'test_rpn_target/img_rpn_gt', step=0)  #just RPN gt
+
+        return len(self.batch_top_inds), len(self.batch_top_pos_inds)
 
 # Using Proposal generate by 3DOP

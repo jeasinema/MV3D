@@ -84,10 +84,6 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     extended_rois = np.vstack((rois, np.hstack((zeros, gt_boxes))))
     assert np.all(extended_rois[:, 0] == 0), 'Only single image batches are supported'
 
-
-    rois_per_image    = CFG.TRAIN.RCNN_BATCH_SIZE
-    fg_rois_per_image = np.round(CFG.TRAIN.RCNN_FG_FRACTION * rois_per_image)
-
     # overlaps: (rois x gt_boxes)
     overlaps = bbox_overlaps(
         np.ascontiguousarray(extended_rois[:,1:5], dtype=np.float),
@@ -104,13 +100,13 @@ def fusion_target(rois, gt_labels, gt_boxes, gt_boxes3d):
     # here it just train the whole network end2end, so it choose this method.
     # !!! the commemted code below(which is not commented in rcnn_target) is for balancing the amount of positive and negative sample
     # which is introduced in SSD
-    num_fg = int(CFG.TRAIN.RCNN_FG_FRACTION * CFG.TRAIN.RCNN_BATCHSIZE)
+    num_fg = int(np.round(CFG.TRAIN.RCNN_FG_FRACTION * CFG.TRAIN.RCNN_BATCH_SIZE))
     fg_inds = np.where(max_overlaps >= CFG.TRAIN.RCNN_FG_THRESH_LO)[0]
     if len(fg_inds) > num_fg:
         fg_inds = np.random.choice(fg_inds, size=num_fg, replace=False)
 
     # Select false positive(here we call them fp because they've passed the NMS(which means their scores are ok))
-    num_fp = CFG.TRAIN.RCNN_BATCHSIZE - len(fg_inds)
+    num_fp = int(CFG.TRAIN.RCNN_BATCH_SIZE - len(fg_inds))
     fp_inds = np.intersect1d(
         np.where(max_overlaps <= CFG.TRAIN.RCNN_BG_THRESH_HI)[0],
         np.where(CFG.TRAIN.RCNN_BG_THRESH_LO <= max_overlaps)[0]

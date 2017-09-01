@@ -29,12 +29,11 @@ And another problem is, the penalty for missing a positive sample is just a clas
 *11. like 244, sometimes, FO1 will generate small bbox for near object
 	-> for 463, if we lower the threshold then we can get small box for some missed object, it just imply that the model is not trained well. So small boxes are just a signal that the boxes are not trained well.
 
-*12. like 246, 248 and especially 249, +264,+**386+470, if a car do have pattern on BV but not have evident pattern at rgb(like highly occluded), it is easilly to be trunced
+*12. like 246, 248 and especially 249, +264,+386+470, if a car do have pattern on BV but not have evident pattern at rgb(like highly occluded), it is easilly to be trunced
 	-> but here comes another problem is, how such 2d detector detects such fully-occluded object without extra input?
 	-> refer to RRC(currently ranked first in KITTI 2d car hard), it can be done by using context aware refinement, like multi-scale feature and the feature aroud the object, RoI pooling is somehow a kind of this method.
 Since it is impossible to generate pattern from zero, so the pattern between different input in fusion net should be supplied for each other in a more reasonalbe manner!!!!!, instead of compete between each other.
-	-> for some 
- case(285), it seems that:
+	-> for some extreme case(285), it seems that:
 	- RGB seems dominant the 2nd stage detector but only tends to miss some positive sample
 	- proposals provided in RPN for 2nd stage are not enough for real object, it seems that if there is only 1 proposal for an object, it is always being trunced in the 2nd stage detector. Just look at 285, there are 10 objects in a scan, but the proposal is not enough for some object
 	- maybe we must add some severe penalty for RPN and 2nd stage if they give low score for postive sample. and explicitly control the amount of proposal for 2nd stage detector during training.

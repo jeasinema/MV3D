@@ -38,20 +38,34 @@ __C.FRONT_R_MAX=30
 __C.FRONT_R_MIN=-70
 __C.FRONT_C_MAX=750
 __C.FRONT_C_MIN=-750
-__C.FRONT_WIDTH=750
-__C.FRONT_HEIGHT=50
+__C.FRONT_WIDTH=1500
+__C.FRONT_HEIGHT=100
 __C.BOX3D_Z_MIN=-2.52
 __C.BOX3D_Z_MAX=-1.02
 
 __C.USE_FRONT=1
-__C.GPU_USE='0'
+__C.GPU_AVAILABLE='0,1,2,3'
+__C.GPU_USE_COUNT=1
 __C.GPU_MEMORY_FRACTION=0.5
 
+### Hyper-parameters
 # for NMS
 #### don't forget to change the TOPN values in configuration.py in the same time!!!
-__C.RPN_NMS_THRESHOLD=0.7
-__C.RPN_NMS_THRESHOLD_TRAINING=0.7  
+__C.RPN_NMS_THRESHOLD=0.7 # when run, is 0
 __C.RCNN_NMS_THRESHOLD=0.75
+
+# for RCNN fusion output(selected result retrieval)
+__C.USE_HANDCRAFT_FUSION=0 # use man-restrict fusion rule or just a learnable rule.
+__C.HIGH_SCORE_THRESHOLD=0.9
+__C.USE_LEARNABLE_FUSION=0
+
+# for Siamese structure context aware refinement
+__C.USE_SIAMESE_FUSION=0
+__C.ROI_ENLARGE_RATIO=1.5
+
+# for RoI pooling
+__C.ROI_POOLING_HEIGHT=6
+__C.ROI_POOLING_WIDTH=6
 
 # for conv3d on bbox regress
 __C.POINT_AMOUNT_LIMIT=100000
@@ -85,7 +99,7 @@ __C.LOG_DIR=osp.join(__C.ROOT_DIR,'log')
 __C.USE_RESNET_AS_TOP_BASENET = True
 __C.USE_RESNET_AS_FRONT_BASENET = True
 
-__C.IMAGE_FUSION_DIABLE = False
+__C.IMAGE_FUSION_DISABLE = False
 __C.RGB_BASENET = 'resnet'  # 'resnet' 、'xception' 'VGG'
 if __C.RGB_BASENET == 'xception':
     __C.USE_IMAGENET_PRE_TRAINED_MODEL = True
@@ -147,16 +161,16 @@ elif __C.DATA_SETS_TYPE == 'didi2':
     TOP_Y_DIVISION = 0.2
     TOP_Z_DIVISION = 0.3
 elif __C.DATA_SETS_TYPE == 'kitti':
-    TOP_Y_MIN = -25
-    TOP_Y_MAX = +25
+    TOP_Y_MIN = -30
+    TOP_Y_MAX = +30
     TOP_X_MIN = 0
     TOP_X_MAX = 80
-    TOP_Z_MIN = -3.7
-    TOP_Z_MAX = 0.2
+    TOP_Z_MIN = -4.2
+    TOP_Z_MAX = 0.8
 
     TOP_X_DIVISION = 0.1
     TOP_Y_DIVISION = 0.1
-    TOP_Z_DIVISION = 0.3
+    TOP_Z_DIVISION = 0.2
 else:
     raise ValueError('unexpected type in cfg.DATA_SETS_TYPE item: {}!'.format(__C.DATA_SETS_TYPE))
 

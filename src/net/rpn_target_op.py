@@ -150,7 +150,14 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
     max_overlaps       = overlaps[np.arange(len(inside_inds)), argmax_overlaps]
     gt_argmax_overlaps = overlaps.argmax(axis=0)
     gt_max_overlaps    = overlaps[gt_argmax_overlaps, np.arange(overlaps.shape[1])]
-    gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
+    # remove zero overlaps
+    tmp = []
+    for ele in gt_max_overlaps:
+        if ele != 0:
+            tmp.append(ele)
+    gt_max_overlaps = np.array(tmp)
+
+    gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]  # find element match gt_max_overlaps[0/1] in overlaps[:, 0/1] respectively
 
     labels[max_overlaps <  CFG.TRAIN.RPN_BG_THRESH_HI] = 0   # bg label
     labels[gt_argmax_overlaps] = 1                           # fg label: for each gt, anchor with highest overlap
@@ -162,11 +169,11 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
     num_fg = int(CFG.TRAIN.RPN_FG_FRACTION * CFG.TRAIN.RPN_BATCHSIZE)
     fg_inds = np.where(labels == 1)[0]
     if len(fg_inds) > num_fg:
-        disable_inds = np.random.choice( fg_inds, size=(len(fg_inds) - num_fg), replace=False)
+        disable_inds = np.random.choice(fg_inds, size=(len(fg_inds) - num_fg), replace=False)
         labels[disable_inds] = -1
 
     # subsample negative labels
-    num_bg = CFG.TRAIN.RPN_BATCHSIZE - np.sum(labels == 1)
+    num_bg = int(CFG.TRAIN.RPN_BATCHSIZE - np.sum(labels == 1))
     bg_inds = np.where(labels == 0)[0]
     if len(bg_inds) > num_bg:
         disable_inds = np.random.choice(bg_inds, size=(len(bg_inds) - num_bg), replace=False)
@@ -209,13 +216,23 @@ def draw_rpn_gt(image, gt_boxes, gt_labels=None):
     num =len(gt_boxes)
     for n in range(num):
         b = gt_boxes[n]
+        u0, v0 = b[0], b[1]
+        u1, v1 = b[2], b[3]
+        thickness = 1
         if gt_labels[n]==1:
-            cv2.rectangle(img_gt,(b[0],b[1]),(b[2],b[3]),(255,0,0),2)
+            color = (255,0,0)
+            cv2.line(img_gt, (u0,v0), (u0,v1), color, thickness, cv2.LINE_AA)
+            cv2.line(img_gt, (u0,v1), (u1,v1), color, thickness, cv2.LINE_AA)
+            cv2.line(img_gt, (u1,v1), (u1,v0), color, thickness, cv2.LINE_AA)
+            cv2.line(img_gt, (u1,v0), (u0,v0), color, thickness, cv2.LINE_AA)
         elif gt_labels[n]==0:
-            cv2.rectangle(img_gt, (b[0], b[1]), (b[2], b[3]), (0, 255, 255), 2)
+            color = (0,255,255)
+            cv2.line(img_gt, (u0,v0), (u0,v1), color, thickness, cv2.LINE_AA)
+            cv2.line(img_gt, (u0,v1), (u1,v1), color, thickness, cv2.LINE_AA)
+            cv2.line(img_gt, (u1,v1), (u1,v0), color, thickness, cv2.LINE_AA)
+            cv2.line(img_gt, (u1,v0), (u0,v0), color, thickness, cv2.LINE_AA)
 
     return img_gt
-
 
 def draw_rpn_labels(image, anchors, inds, labels):
 

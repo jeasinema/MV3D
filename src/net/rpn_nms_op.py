@@ -119,6 +119,7 @@ def rpn_nms_generator(
         # 6. apply nms (e.g. threshold = 0.7)
         # 7. take after_nms_topN (e.g. 300)
         # 8. return the top proposals
+
         keep = nms(np.hstack((proposals, scores)), nms_thresh)
         if nms_post_topn > 0:
             keep = keep[:nms_post_topn]
