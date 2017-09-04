@@ -50,6 +50,7 @@ __C.GPU_MEMORY_FRACTION=1
 
 ### Hyper-parameters
 # for NMS
+__C.USE_GPU_NMS=0
 #### don't forget to change the TOPN values in configuration.py in the same time!!!
 __C.RPN_NMS_THRESHOLD=0.7 # when run, is 0
 __C.RCNN_NMS_THRESHOLD=0.75

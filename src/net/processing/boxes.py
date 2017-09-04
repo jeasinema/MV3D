@@ -1,6 +1,11 @@
 from net.configuration import CFG
 from net.lib.utils.bbox import bbox_overlaps ,box_vote
-from net.lib.nms.gpu_nms import gpu_nms as nms
+from config import *
+
+if cfg.USE_GPU_NMS:
+    from net.lib.nms.gpu_nms import gpu_nms as nms
+else:
+    from net.lib.nms.cpu_nms import cpu_nms as nms
 import numpy as np
 
 #     roi  : i, x1,y1,x2,y2  i=image_index  
@@ -121,3 +126,11 @@ def non_max_suppress(boxes, scores, num_classes,
                 nms_boxes[j] = nms_boxes[j][keep, :]
 
     return nms_boxes  
+
+# unimplemented
+def remove_empty_anchors(top_view, anchors, inside_inds):
+    #input:
+    # top_view:(N, W, L, C)
+    # anchors: (N, 4)
+    # inside_inds: (N)
+    return inside_inds

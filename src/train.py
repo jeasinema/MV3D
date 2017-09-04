@@ -1,18 +1,20 @@
-import mv3d
-import mv3d_net
-import glob
+#import mv3d
+#import mv3d_net
+# import glob
 from config import *
-# import utils.batch_loading as ub
+# # import utils.batch_loading as ub
 import argparse
 import os
-from utils.training_validation_data_splitter import TrainingValDataSplitter
+import time
+# from utils.training_validation_data_splitter import TrainingValDataSplitter
 from utils.batch_loading import BatchLoading3
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training')
 
-    all= '%s,%s,%s,%s' % (mv3d_net.top_view_rpn_name ,mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name)
+    #all= '%s,%s,%s,%s' % (mv3d_net.top_view_rpn_name ,mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name)
+    all = ""
 
     parser.add_argument('-w', '--weights', type=str, nargs='?', default=all,  # FIXME
         help='use pre trained weights example: -w "%s" ' % (all))
@@ -103,12 +105,17 @@ if __name__ == '__main__':
     elif cfg.DATA_SETS_TYPE == 'kitti':
       # since 2011_09_26_0009 lacks No. 177,178,179,180 lidar data, deprecated
         training_dataset = {
-            '2011_09_26': ['0001', '0015', '0029', '0052', '0035', '0061', '0002', '0018', '0013', '0032', '0056',  '0019', '0011',
-                       '0036', '0005', '0028', '0048', '0059',
-                       '0057', '0084', '0079', '0051', '0093', '0064', '0027',  '0086', '0039', '0022', '0023', '0046', '0060', '0087', '0091']}
+            '2011_09_26': [
+              '0001', '0015', '0052', '0035', '0061', '0002', '0018', '0013', '0032', '0056', '0019', '0011',
+              '0036', '0005', '0028', '0048', ' 0059',
+              '0057', '0084', '0079', '0051', '0093', '0064', '0027', '0039', '0022', '0023', '0046', '0060', '0087', '0091'
+            ]
+        }
 
         validation_dataset = {
-            '2011_09_26': ['0070', '0017', '0014', '0020']
+            '2011_09_26': [
+              '0070', '0017', '0014', '0020', '0086', '0029'
+            ]
         }
 
 # '2011_09_26': ['0001', '0002', '0005', '0011', '0013', '0015', '0017', '0018',  '0019', '0020', '0023',
@@ -121,11 +128,16 @@ if __name__ == '__main__':
     #with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
         #with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,
     #                      queue_size=1, require_shuffle=True) as validation:
-    with BatchLoading3(tags=training_dataset, require_shuffle=True, batch_size=1, use_precal_view=True, queue_size=20) as training:
-      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=20) as validation:
+    with BatchLoading3(tags=training_dataset, require_shuffle=True, batch_size=1, use_precal_view=True, queue_size=10000) as training:
+      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=10000) as validation:
 
-            
-            train = mv3d.Trainer(train_set=training, validation_set=validation,
-                                 pre_trained_weights=weights, train_targets=targets, log_tag=tag,
-                                 continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)
-            train(max_iter=max_iter) 
+            i = 0
+            while True:
+              training.load()
+              time.sleep(0.2)
+              print(i)
+              i += 1
+            # train = mv3d.Trainer(train_set=training, validation_set=validation,
+            #                      pre_trained_weights=weights, train_targets=targets, log_tag=tag,
+            #                      continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)
+            # train(max_iter=max_iter) 

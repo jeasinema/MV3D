@@ -21,6 +21,7 @@ import net.utility.file as utilfile
 from config import cfg
 import config
 from net.processing.boxes import non_max_suppress
+from net.processing.boxes import remove_empty_anchors
 import utils.batch_loading as dataset
 from utils.timer import timer
 from keras import backend as K
@@ -266,6 +267,10 @@ class MV3D(object):
         self.top_view = top_view
         self.rgb_image = rgb_image
         self.front_view = front_view
+
+         # remove empty anchors
+        self.anchors_inside_inds = remove_empty_anchors(self.top_view, self.top_view_anchors, self.anchors_inside_inds)  # only support batch size  == 1
+
         fd1 = {
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
@@ -325,6 +330,10 @@ class MV3D(object):
         self.top_view = top_view
         self.rgb_image = rgb_image
         self.front_view = front_view
+
+        # remove empty anchors
+        self.anchors_inside_inds = remove_empty_anchors(self.top_view, self.top_view_anchors, self.anchors_inside_inds)  # only support batch size  == 1
+
         fd1 = {
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
@@ -731,16 +740,12 @@ class Trainer(MV3D):
 
                 # summary
                 self.top_cls_loss = self.net['top_cls_loss']
-                tf.summary.scalar('top_cls_loss', self.top_cls_loss)
 
                 self.top_reg_loss = self.net['top_reg_loss']
-                tf.summary.scalar('top_reg_loss', self.top_reg_loss)
 
                 self.fuse_cls_loss = self.net['fuse_cls_loss']
-                tf.summary.scalar('fuse_cls_loss', self.fuse_cls_loss)
 
                 self.fuse_reg_loss = self.net['fuse_reg_loss']
-                tf.summary.scalar('fuse_reg_loss', self.fuse_reg_loss)
 
                 train_var_list =[]
 
@@ -763,25 +768,39 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.top_cls_loss + 0.5 * self.top_reg_loss
+                    self.targets_loss = 1. * self.top_cls_loss + 1. * self.top_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+
+                elif set([mv3d_net.frontfeature_net_name]) == set(train_targets):
+                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
                 elif set([mv3d_net.fusion_net_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name, mv3d_net.frontfeature_net_name, mv3d_net.fusion_net_name]) == set(train_targets):
-                    self.targets_loss += 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
 
                 elif set([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])\
                         == set(train_targets):
-                    self.targets_loss += 1. * (1. * self.top_cls_loss + 0.05 * self.top_reg_loss) + \
+                    self.targets_loss = 1. * (1. * self.top_cls_loss + 0.05 * self.top_reg_loss) + \
                                  1. * self.fuse_cls_loss + 0.1 * self.fuse_reg_loss
                 else:
                     ValueError('unknow train_target set')
 
                 tf.summary.scalar('targets_loss', self.targets_loss)
+
+                # for RPN only mode
+                if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
+                    tf.summary.scalar('top_cls_loss', self.top_cls_loss)
+                    tf.summary.scalar('top_reg_loss', self.top_reg_loss)
+                else:
+                    tf.summary.scalar('top_cls_loss', self.top_cls_loss)
+                    tf.summary.scalar('top_reg_loss', self.top_reg_loss)
+                    tf.summary.scalar('fuse_cls_loss', self.fuse_cls_loss)
+                    tf.summary.scalar('fuse_reg_loss', self.fuse_reg_loss)
+
                 self.solver_step = solver.minimize(loss = self.targets_loss,var_list=train_var_list)
 
 
@@ -917,9 +936,9 @@ class Trainer(MV3D):
             #batch_size=1
 
             #FIXME
-            validation_step=500
+            validation_step=100 # should be the ratio between the test set size and the val set size(not a strict requirement)
             ckpt_save_step=1000
-            self.iter_debug=500  #FIXME this is log iter
+            self.iter_debug=500  #FIXME this is log iter(log image)
             summary_step=200  # this is freq for print loss
 
 
@@ -983,7 +1002,7 @@ class Trainer(MV3D):
 
 
                     # minic batch_size
-                    if iter%self.batch_size:
+                    if not iter%self.batch_size:
                         do_optimize = True
 
                     # fit
@@ -1045,18 +1064,8 @@ class Trainer(MV3D):
 
         self.batch_gt_top_boxes = data.box3d_to_top_box(batch_gt_boxes3d[0])
 
-        ## run propsal generation
-        fd1 = {
-            net['top_view']: batch_top_view,
-            net['top_anchors']: self.top_view_anchors,
-            net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
-
-            blocks.IS_TRAIN_PHASE: True,
-            K.learning_phase(): 1
-        }
-        # attention: this step include rpn stage NMS, and applied the delta to proposals
-        self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
-            sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
+        # remove empty anchors
+        self.anchors_inside_inds = remove_empty_anchors(self.batch_top_view, self.top_view_anchors, self.anchors_inside_inds)  # only support batch size  == 1
 
         ## rpn_target just judge if an anchor is a positive/negative/unused sample(do not fuse the gt!)
         ## And using random method to balance the amount of positive/negative sample.(Introduced in SSD)
@@ -1068,103 +1077,176 @@ class Trainer(MV3D):
         self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
-        if log:
-            step_name = 'validation' if is_validation else  'train'
-            scope_name = '%s_iter_%06d' % (step_name, self.n_global_step - (self.n_global_step % self.iter_debug))
-            self.log_rpn(step=self.n_global_step, scope_name=scope_name)
 
-        # In this step, it fuse the gt into proposal generated by RPN and set 2 limits for positive/negative sample(standard is also overlap)
-        # then retain the positive and negative samples.
-        # batch_fuse_targets is the 3b bbox delta between all the sample and corresponding gt boxes3d, negative sample's targets are 0
-        self.batch_top_rois, self.batch_fuse_labels, self.batch_fuse_targets = \
-            fusion_target(self.batch_proposals, batch_gt_labels[0], self.batch_gt_top_boxes, batch_gt_boxes3d[0])
+        if set([mv3d_net.top_view_rpn_name]) == set(self.train_target):
+            # only run RPN part
+            fd1 = {
+                net['top_view']: batch_top_view,
+                net['top_anchors']: self.top_view_anchors,
+                net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
 
-        # need to make sure that the rois cannot exceed the bounding of target view
-        # -> no need, since roi_pooling op has done the boundary clip
-        self.batch_rois3d = project_to_roi3d(self.batch_top_rois) # this just simply add height to the point(pre-defined height)
-        self.batch_front_rois = project_to_front_roi(self.batch_rois3d)
-        self.batch_rgb_rois = project_to_rgb_roi(self.batch_rois3d)
+                blocks.IS_TRAIN_PHASE: True,
+                K.learning_phase(): 1
+            }
+            fd2 = {
+                **fd1,
+                net['top_inds']: self.batch_top_inds,
+                net['top_pos_inds']: self.batch_top_pos_inds,
+                net['top_labels']: self.batch_top_labels,  
+                net['top_targets']: self.batch_top_targets,
 
-        if log: self.log_fusion_net_target(batch_rgb_images[0], scope_name=scope_name)
-        if log:
-            log_info_str = 'frame info: ' + self.frame_info + '\n'
-            log_info_str += self.anchors_details()  # positives are raw anchors which satisfy iou limit with gt, total is postive+negative samples
-            log_info_str += self.rpn_poposal_details() # postives are fused proposals(proposal output by rpn and gt boxes) which satisfy iou limit, total is .....
-            self.log_info(self.log_subdir, log_info_str)
+                # net['top_view']: batch_top_view,
+                # net['front_view']: batch_front_view,
+                # net['rgb_images']: batch_rgb_images,
+            }
+            if summary_it:
+                run_options = None
+                run_metadata = None
 
-        ## run classification and regression loss -----------
-        fd2 = {
-            **fd1,
-           
-            net['top_view']: batch_top_view,
-            net['front_view']: batch_front_view,
-            net['rgb_images']: batch_rgb_images,
-
-            net['top_rois']: self.batch_top_rois,
-            net['front_rois']: self.batch_front_rois,
-            net['rgb_rois']: self.batch_rgb_rois,
-
-            net['top_inds']: self.batch_top_inds,
-            net['top_pos_inds']: self.batch_top_pos_inds,
-            net['top_labels']: self.batch_top_labels,  
-            net['top_targets']: self.batch_top_targets,
-
-            net['fuse_labels']: self.batch_fuse_labels,
-            net['fuse_targets']: self.batch_fuse_targets,
-        }
-
-        if self.debug_mode:
-            print('\n\nstart debug mode\n\n')
-            debug_sess=tf_debug.LocalCLIDebugWrapperSession(sess)
-            t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
-                debug_sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
-
-
-        if summary_it:
-            run_options = None
-            run_metadata = None
-
-            if is_validation:
-                t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
-                    sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss, self.summ], fd2)
-                self.val_summary_writer.add_summary(tb_sum_val, self.n_global_step)
-                print('added validation  summary ')
-            else:
-                if summary_runmeta:
-                    run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-                    run_metadata = tf.RunMetadata()
-
-                if do_optimize:
-                    _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
-                        sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
-                              self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
-                    self.targets_loss = 0
+                if is_validation:
+                    t_cls_loss, t_reg_loss, tb_sum_val = \
+                        sess.run([top_cls_loss, top_reg_loss, self.summ], fd2)
+                    self.val_summary_writer.add_summary(tb_sum_val, self.n_global_step)
+                    print('added validation summary ')
                 else:
-                    t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
-                        sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
-                              self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+                    if summary_runmeta:
+                        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+                        run_metadata = tf.RunMetadata()
 
-                self.train_summary_writer.add_summary(tb_sum_val, self.n_global_step)
-                print('added training summary ')
+                    if do_optimize:
+                        _, t_cls_loss, t_reg_loss, tb_sum_val = \
+                            sess.run([self.solver_step, top_cls_loss, top_reg_loss,
+                                  self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+                    else:
+                        t_cls_loss, t_reg_loss, tb_sum_val = \
+                            sess.run([top_cls_loss, top_reg_loss,
+                                  self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
 
-                if summary_runmeta:
-                    self.train_summary_writer.add_run_metadata(run_metadata, 'step%d' % self.n_global_step)
-                    print('added runtime metadata.')
+                    self.train_summary_writer.add_summary(tb_sum_val, self.n_global_step)
+                    print('added training summary ')
 
-        else:
-            if is_validation or not do_optimize:
-                t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
-                    sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
+                    if summary_runmeta:
+                        self.train_summary_writer.add_run_metadata(run_metadata, 'step%d' % self.n_global_step)
+                        print('added runtime metadata.')
+
             else:
-                _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
-                    sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss],
-                             feed_dict=fd2)
-                self.targets_loss = 0
+                if is_validation or not do_optimize:
+                    t_cls_loss, t_reg_loss = \
+                        sess.run([top_cls_loss, top_reg_loss], fd2)
+                else:
+                    _, t_cls_loss, t_reg_loss= \
+                        sess.run([self.solver_step, top_cls_loss, top_reg_loss],
+                                 feed_dict=fd2)
+            return t_cls_loss, t_reg_loss, 0.0, 0.0
 
-        if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
-                                    batch_gt_labels, batch_gt_boxes3d, 
-                                    step=self.n_global_step, scope_name=scope_name, print_iou=True, score_threshold=cfg.RCNN_NMS_THRESHOLD)
-        return t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss
+        else: 
+             ## run propsal generation
+            fd1 = {
+                net['top_view']: batch_top_view,
+                net['top_anchors']: self.top_view_anchors,
+                net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
+
+                blocks.IS_TRAIN_PHASE: True,
+                K.learning_phase(): 1
+            }
+            # attention: this step include rpn stage NMS, and applied the delta to proposals
+            self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
+                sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
+
+            if log:
+                step_name = 'validation' if is_validation else  'train'
+                scope_name = '%s_iter_%06d' % (step_name, self.n_global_step - (self.n_global_step % self.iter_debug))
+                self.log_rpn(step=self.n_global_step, scope_name=scope_name)
+
+            # In this step, it fuse the gt into proposal generated by RPN and set 2 limits for positive/negative sample(standard is also overlap)
+            # then retain the positive and negative samples.
+            # batch_fuse_targets is the 3b bbox delta between all the sample and corresponding gt boxes3d, negative sample's targets are 0
+            self.batch_top_rois, self.batch_fuse_labels, self.batch_fuse_targets = \
+                fusion_target(self.batch_proposals, batch_gt_labels[0], self.batch_gt_top_boxes, batch_gt_boxes3d[0])
+
+            # need to make sure that the rois cannot exceed the bounding of target view
+            # -> no need, since roi_pooling op has done the boundary clip
+            self.batch_rois3d = project_to_roi3d(self.batch_top_rois) # this just simply add height to the point(pre-defined height)
+            self.batch_front_rois = project_to_front_roi(self.batch_rois3d)
+            self.batch_rgb_rois = project_to_rgb_roi(self.batch_rois3d)
+
+            if log: self.log_fusion_net_target(batch_rgb_images[0], scope_name=scope_name)
+            if log:
+                log_info_str = 'frame info: ' + self.frame_info + '\n'
+                log_info_str += self.anchors_details()  # positives are raw anchors which satisfy iou limit with gt, total is postive+negative samples
+                log_info_str += self.rpn_poposal_details() # postives are fused proposals(proposal output by rpn and gt boxes) which satisfy iou limit, total is .....
+                self.log_info(self.log_subdir, log_info_str)
+
+            ## run classification and regression loss -----------
+            fd2 = {
+                **fd1,
+               
+                net['top_view']: batch_top_view,
+                net['front_view']: batch_front_view,
+                net['rgb_images']: batch_rgb_images,
+
+                net['top_rois']: self.batch_top_rois,
+                net['front_rois']: self.batch_front_rois,
+                net['rgb_rois']: self.batch_rgb_rois,
+
+                net['top_inds']: self.batch_top_inds,
+                net['top_pos_inds']: self.batch_top_pos_inds,
+                net['top_labels']: self.batch_top_labels,  
+                net['top_targets']: self.batch_top_targets,
+
+                net['fuse_labels']: self.batch_fuse_labels,
+                net['fuse_targets']: self.batch_fuse_targets,
+            }
+
+            if self.debug_mode:
+                print('\n\nstart debug mode\n\n')
+                debug_sess=tf_debug.LocalCLIDebugWrapperSession(sess)
+                t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
+                    debug_sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
+
+
+            if summary_it:
+                run_options = None
+                run_metadata = None
+
+                if is_validation:
+                    t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
+                        sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss, self.summ], fd2)
+                    self.val_summary_writer.add_summary(tb_sum_val, self.n_global_step)
+                    print('added validation  summary ')
+                else:
+                    if summary_runmeta:
+                        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+                        run_metadata = tf.RunMetadata()
+
+                    if do_optimize:
+                        _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
+                            sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
+                                  self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+                    else:
+                        t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
+                            sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
+                                  self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+
+                    self.train_summary_writer.add_summary(tb_sum_val, self.n_global_step)
+                    print('added training summary ')
+
+                    if summary_runmeta:
+                        self.train_summary_writer.add_run_metadata(run_metadata, 'step%d' % self.n_global_step)
+                        print('added runtime metadata.')
+
+            else:
+                if is_validation or not do_optimize:
+                    t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
+                        sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
+                else:
+                    _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
+                        sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss],
+                                 feed_dict=fd2)
+            if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
+                                        batch_gt_labels, batch_gt_boxes3d, 
+                                        step=self.n_global_step, scope_name=scope_name, print_iou=True, score_threshold=cfg.RCNN_NMS_THRESHOLD)
+            return t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss
 
 # predictor is used for testing
 class Tester_3DOP(MV3D):

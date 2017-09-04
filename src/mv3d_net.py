@@ -524,7 +524,7 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
                                     padding='SAME', name=feature_names[n]+'_max_pool')
 
                 roi_features = flatten(block) # now roi_feture shape is (N, X)  N is the amount of rois
-                tf.summary.histogram(feature_names[n], roi_features)
+                #tf.summary.histogram(feature_names[n], roi_features)
                 roi_features_list.append(roi_features)
 
             if cfg.USE_SIAMESE_FUSION:  # seperately introduce context info by enlarge the roi
@@ -585,7 +585,7 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
                         block = avgpool(block, kernel_size=(2, 2), stride=[1, 2, 2, 1],
                                         padding='SAME', name=feature_names[n]+'_max_pool-ctx')
                         ctx_roi_features = flatten(block)
-                        tf.summary.histogram(feature_names[n], ctx_roi_features)
+                        #tf.summary.histogram(feature_names[n], ctx_roi_features)
                         ctx_roi_features_list.append(ctx_roi_features)
         
         if cfg.USE_SIAMESE_FUSION:
@@ -644,7 +644,7 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
             logits=tf.gather(rcnn_scores, pos_inds), labels=tf.gather(rcnn_labels, pos_inds)))
         rcnn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=rcnn_scores, labels=rcnn_labels))
-        rcnn_cls_loss = tf.add(tf.multiply(rcnn_cls_loss_pos, 2.0-0.2), tf.multiply(rcnn_cls_loss_all, 0.2))
+        rcnn_cls_loss = tf.add(tf.multiply(rcnn_cls_loss_pos, 3.0-1.0), tf.multiply(rcnn_cls_loss_all, 1.0))
 
     with tf.variable_scope('get_detals'):
         num = tf.identity( tf.shape(deltas)[0], 'num')
@@ -696,7 +696,7 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
 
     rpn_cls_loss_pos = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores_pos, labels=rpn_labels_pos))
     rpn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores, labels=rpn_labels))
-    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 2.0-0.2), tf.multiply(rpn_cls_loss_all, 0.2))
+    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 3.0-1.0), tf.multiply(rpn_cls_loss_all, 1.0))
 
     deltas1       = tf.reshape(deltas,[-1,4])
     rpn_deltas    = tf.gather(deltas1, pos_inds)  # remove ignore label
@@ -717,7 +717,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     stride = 8
 
     top_anchors = tf.placeholder(shape=[None, 4], dtype=tf.int32, name='anchors')
-    top_inside_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='inside_inds')
+    top_inside_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='inside_inds')  # use this to trunc empty anchor
 
     top_view = tf.placeholder(shape=[None, *top_shape], dtype=tf.float32, name='top')
     front_view = tf.placeholder(shape=[None, *front_shape], dtype=tf.float32, name='front')

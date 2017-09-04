@@ -76,4 +76,12 @@ For another case, the best setting is training with NMS and testing without NMS(
 18. So it seems that if set the FG/BG_IOU_THRESHOLD for RPN sample selection to 0.5/0.3, faster-rcnn's anchors
 
 19. Start Training!
--> RPN use 
+-> RPN 
+-> 
+
+20. consider add a truncer to remove empty anchors(using inside_inds)
+
+
+!!! batch size rewrite!
+!!! single rpn mode!!!  OK 
+!!! multiprocessing loading

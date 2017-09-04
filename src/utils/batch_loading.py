@@ -903,6 +903,7 @@ class BatchLoading3:
         if use_thread:
             self.prepr_data=[]
             self.lodaer_processing = threading.Thread(target=self.loader)
+            # self.lodaer_processing = Process(target=self.loader) cannot load
         else:
             self.preproc_data_queue = Queue()
             self.buffer_blocks = [Array('h', 41246691) for i in range(queue_size)]

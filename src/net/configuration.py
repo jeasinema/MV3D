@@ -16,13 +16,13 @@ CFG.TRAIN.IMS_PER_BATCH = 1  # Images to use per minibatch
 #rpn
 CFG.TRAIN.RPN_BATCHSIZE    = 256  # this is the amount of anchors for training RPN
 CFG.TRAIN.RPN_FG_FRACTION  = 0.25
-CFG.TRAIN.RPN_FG_THRESH_LO = 0.5   # To decided which is FG(by overlap)
-CFG.TRAIN.RPN_BG_THRESH_HI = 0.3   # TO decided which is BG(by overlap)
+CFG.TRAIN.RPN_FG_THRESH_LO = 0.7 # cxz choice   # To decided which is FG(by overlap)
+CFG.TRAIN.RPN_BG_THRESH_HI = 0.5 # cxz choice   # TO decided which is BG(by overlap)
 
 CFG.TRAIN.RPN_NMS_THRESHOLD = 0.5 # 0.7 can be override when using the nms generator, so deprecated(look at config.py instead)
 CFG.TRAIN.RPN_NMS_MIN_SIZE  = 8   # to trunc some extreme small bbox(w.r.t. the real size of the image)
-CFG.TRAIN.RPN_NMS_PRE_TOPN  = 12000 #6000
-CFG.TRAIN.RPN_NMS_POST_TOPN = 2000 #300  this is the amount of proposals output by the RPN(Anytime)
+CFG.TRAIN.RPN_NMS_PRE_TOPN  = 10 #12000 6000
+CFG.TRAIN.RPN_NMS_POST_TOPN = 10 #2000 1200  this is the amount of proposals output by the RPN(Anytime)
 
 
 #rcnn
