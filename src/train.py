@@ -1,12 +1,12 @@
-#import mv3d
-#import mv3d_net
-# import glob
+import mv3d
+import mv3d_net
+import glob
 from config import *
-# # import utils.batch_loading as ub
+# import utils.batch_loading as ub
 import argparse
 import os
 import time
-# from utils.training_validation_data_splitter import TrainingValDataSplitter
+from utils.training_validation_data_splitter import TrainingValDataSplitter
 from utils.batch_loading import BatchLoading3
 
 
@@ -128,16 +128,9 @@ if __name__ == '__main__':
     #with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
         #with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,
     #                      queue_size=1, require_shuffle=True) as validation:
-    with BatchLoading3(tags=training_dataset, require_shuffle=True, batch_size=1, use_precal_view=True, queue_size=10000) as training:
-      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=10000) as validation:
-
-            i = 0
-            while True:
-              training.load()
-              time.sleep(0.2)
-              print(i)
-              i += 1
-            # train = mv3d.Trainer(train_set=training, validation_set=validation,
-            #                      pre_trained_weights=weights, train_targets=targets, log_tag=tag,
-            #                      continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)
-            # train(max_iter=max_iter) 
+    with BatchLoading3(tags=training_dataset, require_shuffle=True, batch_size=1, use_precal_view=True, queue_size=100) as training:
+      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=100) as validation:
+            train = mv3d.Trainer(train_set=training, validation_set=validation,
+                                 pre_trained_weights=weights, train_targets=targets, log_tag=tag,
+                                 continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)
+            train(max_iter=max_iter) 

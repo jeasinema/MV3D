@@ -768,7 +768,7 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    self.targets_loss = 1. * self.top_cls_loss + 1. * self.top_reg_loss
+                    self.targets_loss = 1. * self.top_cls_loss + 1.0 * self.top_reg_loss
 
                 elif set([mv3d_net.imfeature_net_name]) == set(train_targets):
                     self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
@@ -1088,6 +1088,10 @@ class Trainer(MV3D):
                 blocks.IS_TRAIN_PHASE: True,
                 K.learning_phase(): 1
             }
+            # it seems that we have to do it first..., if just pass this step, the gradient will miss
+            # attention: this step include rpn stage NMS, and applied the delta to proposals
+            self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
+                sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
             fd2 = {
                 **fd1,
                 net['top_inds']: self.batch_top_inds,

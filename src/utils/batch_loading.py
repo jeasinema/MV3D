@@ -6,7 +6,7 @@ import glob
 from sklearn.utils import shuffle
 from utils.check_data import check_preprocessed_data, get_file_names
 import net.processing.boxes3d  as box
-from multiprocessing import Process,Queue as Queue, Value,Array
+from multiprocessing import Process,Queue as Queue, Value,Array, cpu_count
 import queue
 import time
 
@@ -574,7 +574,7 @@ class KittiLoading(object):
         self.queue_size = queue_size
         self.require_shuffle = require_shuffle
         self.preprocess = data.Preprocess()
-        self.dataset_queue = queue.Queue()
+        self.dataset_queue = Queue()  # using the queue provided by multiprocessing module
 
         self.load_index = 0
         self.fill_queue(self.queue_size)
@@ -591,10 +591,10 @@ class KittiLoading(object):
             self.front_shape = (cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3)
             self.rgb_shape = (cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH, 3)
 
-        self.loader_worker = threading.Thread(target=self.loader_worker_main)
-        #self.loader_worker = Process(target=self.loader_worker_main)  # don't use it, since loader is slower than NN
+        #self.loader_worker = threading.Thread(target=self.loader_worker_main)
+        self.loader_worker = [Process(target=self.loader_worker_main) for i in cpu_count()]  
         self.work_exit = False
-        self.loader_worker.start()
+        [i.start() for i in self.loader_worker]
 
     def __enter__(self):
         return self
@@ -737,7 +737,7 @@ class KittiLoading(object):
             if self.dataset_queue.qsize() >= self.queue_size // 2:
                 time.sleep(1)
             else:
-                self.fill_queue(self.queue_size - self.dataset_queue.qsize())
+                self.fill_queue(1)  # since we use multiprocessing, 1 is ok
         #print('exit!, current size:{}'.format(self.dataset_queue.qsize()))
 
 
@@ -901,15 +901,15 @@ class BatchLoading3:
         self.loader_need_exit = Value('i', 0)
 
         if use_thread:
-            self.prepr_data=[]
-            self.lodaer_processing = threading.Thread(target=self.loader)
-            # self.lodaer_processing = Process(target=self.loader) cannot load
+            self.prepr_data=Queue()
+            #self.lodaer_processing = threading.Thread(target=self.loader)
+            self.lodaer_processing = [Process(target=self.loader) for i in range(6)]
         else:
             self.preproc_data_queue = Queue()
             self.buffer_blocks = [Array('h', 41246691) for i in range(queue_size)]
             self.blocks_usage = Array('i', range(queue_size))
             self.lodaer_processing = Process(target=self.loader)
-        self.lodaer_processing.start()
+        [i.start() for i in self.lodaer_processing]
 
 
     def __enter__(self):
@@ -1034,11 +1034,13 @@ class BatchLoading3:
         if use_thread:
             while self.loader_need_exit.value == 0:
 
-                if len(self.prepr_data) >=self.cache_size:
+                #if len(self.prepr_data) >=self.cache_size:
+                if self.prepr_data.qsize() >= self.cache_size:
                     time.sleep(1)
-                    # print('sleep ')
+                #    # print('sleep ')
                 else:
-                    self.prepr_data = [(self.data_preprocessed())]+self.prepr_data
+                #self.prepr_data = [(self.data_preprocessed())]+self.prepr_data
+                    self.prepr_data.put((self.data_preprocessed()))
                     # print('data_preprocessed')
         else:
             while self.loader_need_exit.value == 0:
@@ -1065,10 +1067,11 @@ class BatchLoading3:
 
     def load(self):
         if use_thread:
-            while len(self.prepr_data)==0:
+            #while len(self.prepr_data)==0:
+            while self.prepr_data.qsize() ==0:
                 time.sleep(1)
-            data_ori = self.prepr_data.pop()
-
+            #data_ori = self.prepr_data.pop()
+            data_ori = self.prepr_data.get()
 
         else:
 
