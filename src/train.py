@@ -13,8 +13,7 @@ from utils.batch_loading import BatchLoading3
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training')
 
-    #all= '%s,%s,%s,%s' % (mv3d_net.top_view_rpn_name ,mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name)
-    all = ""
+    all= '%s,%s,%s,%s' % (mv3d_net.top_view_rpn_name ,mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name)
 
     parser.add_argument('-w', '--weights', type=str, nargs='?', default=all,  # FIXME
         help='use pre trained weights example: -w "%s" ' % (all))

@@ -725,6 +725,8 @@ class Trainer(MV3D):
         self.summ = None
         self.n_global_step = 0
         self.targets_loss = 0
+        self.targets_loss_sum = 0
+        self.targets_loss_cur = 0
 
         # saver
         self.saver = tf.train.Saver()
@@ -737,15 +739,24 @@ class Trainer(MV3D):
                 self.learning_rate = tf.placeholder(tf.float32, shape=[])
                 # solver = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
                 solver = tf.train.AdamOptimizer(learning_rate=self.lr)
+                self.do_optimize = tf.placeholder(tf.bool, shape=[], name='do_optimize')
 
                 # summary
                 self.top_cls_loss = self.net['top_cls_loss']
+                self.top_cls_loss_sum = 0.0
+                self.top_cls_loss_cur = self.net['top_cls_loss_cur']
 
                 self.top_reg_loss = self.net['top_reg_loss']
+                self.top_reg_loss_sum = 0.0
+                self.top_reg_loss_cur = self.net['top_reg_loss_cur']
 
                 self.fuse_cls_loss = self.net['fuse_cls_loss']
+                self.fuse_cls_loss_sum = 0.0
+                self.fuse_cls_loss_cur = self.net['fuse_cls_loss_cur']
 
                 self.fuse_reg_loss = self.net['fuse_reg_loss']
+                self.fuse_reg_loss_sum = 0.0
+                self.fuse_reg_loss_cur = self.net['fuse_reg_loss_cur']
 
                 train_var_list =[]
 
@@ -768,38 +779,52 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    self.targets_loss = 1. * self.top_cls_loss + 1.0 * self.top_reg_loss
+                    w1, w2 = 1.0, 1.0
+                    self.targets_loss = w1 * self.top_cls_loss + w2 * self.top_reg_loss
+                    self.targets_loss_cur = w1 * self.top_cls_loss_cur + w2 * self.top_reg_loss_cur
 
                 elif set([mv3d_net.imfeature_net_name]) == set(train_targets):
-                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    w1, w2 = 1.0, 1.0
+                    self.targets_loss = w1 * self.fuse_cls_loss + w2 * self.fuse_reg_loss
+                    self.targets_loss_cur = w1 * self.fuse_cls_loss_cur + w2 * self.fuse_reg_loss_cur
 
                 elif set([mv3d_net.frontfeature_net_name]) == set(train_targets):
-                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    w1, w2 = 1.0, 1.0
+                    self.targets_loss = w1 * self.fuse_cls_loss + w2 * self.fuse_reg_loss
+                    self.targets_loss_cur = w1 * self.fuse_cls_loss_cur + w2 * self.fuse_reg_loss_cur
 
                 elif set([mv3d_net.fusion_net_name]) == set(train_targets):
-                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    w1, w2 = 1.0, 1.0
+                    self.targets_loss = w1 * self.fuse_cls_loss + w2 * self.fuse_reg_loss
+                    self.targets_loss_cur = w1 * self.fuse_cls_loss_cur + w2 * self.fuse_reg_loss_cur
 
                 elif set([mv3d_net.imfeature_net_name, mv3d_net.frontfeature_net_name, mv3d_net.fusion_net_name]) == set(train_targets):
-                    self.targets_loss = 1. * self.fuse_cls_loss + 1. * self.fuse_reg_loss
+                    w1, w2 = 1.0, 1.0
+                    self.targets_loss = w1 * self.fuse_cls_loss + w2 * self.fuse_reg_loss
+                    self.targets_loss_cur = w1 * self.fuse_cls_loss_cur + w2 * self.fuse_reg_loss_cur
 
                 elif set([mv3d_net.top_view_rpn_name, mv3d_net.imfeature_net_name,mv3d_net.fusion_net_name, mv3d_net.frontfeature_net_name])\
                         == set(train_targets):
-                    self.targets_loss = 1. * (1. * self.top_cls_loss + 0.05 * self.top_reg_loss) + \
-                                 1. * self.fuse_cls_loss + 0.1 * self.fuse_reg_loss
+                    w1, w2, w3, w4, w5 = 1.0, 1.0, 0.05, 1.0, 0.1
+                    self.targets_loss = w1 * (w2 * self.top_cls_loss + w3 * self.top_reg_loss) + \
+                                 w4 * self.fuse_cls_loss + w5 * self.fuse_reg_loss
+                    
+                    self.targets_loss_cur = w1 * (w2 * self.top_cls_loss_cur + w3 * self.top_reg_loss_cur) + \
+                                 w4 * self.fuse_cls_loss_cur + w5 * self.fuse_reg_loss_cur
                 else:
                     ValueError('unknow train_target set')
 
-                tf.summary.scalar('targets_loss', self.targets_loss)
+                tf.summary.scalar('targets_loss', self.targets_loss_cur)
 
                 # for RPN only mode
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    tf.summary.scalar('top_cls_loss', self.top_cls_loss)
-                    tf.summary.scalar('top_reg_loss', self.top_reg_loss)
+                    tf.summary.scalar('top_cls_loss', self.top_cls_loss_cur)
+                    tf.summary.scalar('top_reg_loss', self.top_reg_loss_cur)
                 else:
-                    tf.summary.scalar('top_cls_loss', self.top_cls_loss)
-                    tf.summary.scalar('top_reg_loss', self.top_reg_loss)
-                    tf.summary.scalar('fuse_cls_loss', self.fuse_cls_loss)
-                    tf.summary.scalar('fuse_reg_loss', self.fuse_reg_loss)
+                    tf.summary.scalar('top_cls_loss', self.top_cls_loss_cur)
+                    tf.summary.scalar('top_reg_loss', self.top_reg_loss_cur)
+                    tf.summary.scalar('fuse_cls_loss', self.fuse_cls_loss_cur)
+                    tf.summary.scalar('fuse_reg_loss', self.fuse_reg_loss_cur)
 
                 self.solver_step = solver.minimize(loss = self.targets_loss,var_list=train_var_list)
 
@@ -1060,6 +1085,10 @@ class Trainer(MV3D):
         top_reg_loss = net['top_reg_loss']
         fuse_cls_loss = net['fuse_cls_loss']
         fuse_reg_loss = net['fuse_reg_loss']
+        top_cls_loss_cur = net['top_cls_loss_cur']
+        top_reg_loss_cur = net['top_reg_loss_cur']
+        fuse_cls_loss_cur = net['fuse_cls_loss_cur']
+        fuse_reg_loss_cur = net['fuse_reg_loss_cur']
 
 
         self.batch_gt_top_boxes = data.box3d_to_top_box(batch_gt_boxes3d[0])
@@ -1078,9 +1107,15 @@ class Trainer(MV3D):
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
 
+        # Single RPN mode(Fast)
         if set([mv3d_net.top_view_rpn_name]) == set(self.train_target):
             # only run RPN part
             fd1 = {
+                net['top_cls_loss_sum']: self.top_cls_loss_sum,
+                net['top_reg_loss_sum']: self.top_reg_loss_sum,
+                net['fuse_cls_loss_sum']: self.fuse_cls_loss_sum,
+                net['fuse_reg_loss_sum']: self.fuse_reg_loss_sum,
+
                 net['top_view']: batch_top_view,
                 net['top_anchors']: self.top_view_anchors,
                 net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
@@ -1098,10 +1133,6 @@ class Trainer(MV3D):
                 net['top_pos_inds']: self.batch_top_pos_inds,
                 net['top_labels']: self.batch_top_labels,  
                 net['top_targets']: self.batch_top_targets,
-
-                # net['top_view']: batch_top_view,
-                # net['front_view']: batch_front_view,
-                # net['rgb_images']: batch_rgb_images,
             }
             if summary_it:
                 run_options = None
@@ -1109,7 +1140,7 @@ class Trainer(MV3D):
 
                 if is_validation:
                     t_cls_loss, t_reg_loss, tb_sum_val = \
-                        sess.run([top_cls_loss, top_reg_loss, self.summ], fd2)
+                        sess.run([top_cls_loss_cur, top_reg_loss_cur, self.summ], fd2)
                     self.val_summary_writer.add_summary(tb_sum_val, self.n_global_step)
                     print('added validation summary ')
                 else:
@@ -1119,11 +1150,11 @@ class Trainer(MV3D):
 
                     if do_optimize:
                         _, t_cls_loss, t_reg_loss, tb_sum_val = \
-                            sess.run([self.solver_step, top_cls_loss, top_reg_loss,
+                            sess.run([self.solver_step, top_cls_loss_cur, top_reg_loss_cur,
                                   self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
                     else:
                         t_cls_loss, t_reg_loss, tb_sum_val = \
-                            sess.run([top_cls_loss, top_reg_loss,
+                            sess.run([top_cls_loss_cur, top_reg_loss_cur,
                                   self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
 
                     self.train_summary_writer.add_summary(tb_sum_val, self.n_global_step)
@@ -1136,16 +1167,31 @@ class Trainer(MV3D):
             else:
                 if is_validation or not do_optimize:
                     t_cls_loss, t_reg_loss = \
-                        sess.run([top_cls_loss, top_reg_loss], fd2)
+                        sess.run([top_cls_loss_cur, top_reg_loss_cur], fd2)
                 else:
                     _, t_cls_loss, t_reg_loss= \
-                        sess.run([self.solver_step, top_cls_loss, top_reg_loss],
+                        sess.run([self.solver_step, top_cls_loss_cur, top_reg_loss_cur],
                                  feed_dict=fd2)
+
+            # cumulation/clear
+            if do_optimize: # clear
+                self.top_cls_loss_sum = self.top_reg_loss_sum = self.fuse_cls_loss_sum = self.fuse_reg_loss_sum = 0.0
+            else: # cumulation
+                self.top_cls_loss_sum += t_cls_loss
+                self.top_reg_loss_sum += t_reg_loss
+                self.fuse_cls_loss_sum += 0.0
+                self.fuse_reg_loss_sum += 0.0
+
             return t_cls_loss, t_reg_loss, 0.0, 0.0
 
         else: 
              ## run propsal generation
             fd1 = {
+                net['top_cls_loss_sum']: self.top_cls_loss_sum,
+                net['top_reg_loss_sum']: self.top_reg_loss_sum,
+                net['fuse_cls_loss_sum']: self.fuse_cls_loss_sum,
+                net['fuse_reg_loss_sum']: self.fuse_reg_loss_sum,
+
                 net['top_view']: batch_top_view,
                 net['top_anchors']: self.top_view_anchors,
                 net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
@@ -1206,7 +1252,7 @@ class Trainer(MV3D):
                 print('\n\nstart debug mode\n\n')
                 debug_sess=tf_debug.LocalCLIDebugWrapperSession(sess)
                 t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
-                    debug_sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
+                    debug_sess.run([top_cls_loss_cur, top_reg_loss_cur, fuse_cls_loss_cur, fuse_reg_loss_cur], fd2)
 
 
             if summary_it:
@@ -1215,7 +1261,7 @@ class Trainer(MV3D):
 
                 if is_validation:
                     t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
-                        sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss, self.summ], fd2)
+                        sess.run([top_cls_loss_cur, top_reg_loss_cur, fuse_cls_loss_cur, fuse_reg_loss_cur, self.summ], fd2)
                     self.val_summary_writer.add_summary(tb_sum_val, self.n_global_step)
                     print('added validation  summary ')
                 else:
@@ -1225,11 +1271,11 @@ class Trainer(MV3D):
 
                     if do_optimize:
                         _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
-                            sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
+                            sess.run([self.solver_step, top_cls_loss_cur, top_reg_loss_cur, fuse_cls_loss_cur, fuse_reg_loss_cur,
                                   self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
                     else:
                         t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss, tb_sum_val = \
-                            sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss,
+                            sess.run([top_cls_loss_cur, top_reg_loss_cur, fuse_cls_loss_cur, fuse_reg_loss_cur,
                                   self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
 
                     self.train_summary_writer.add_summary(tb_sum_val, self.n_global_step)
@@ -1242,14 +1288,24 @@ class Trainer(MV3D):
             else:
                 if is_validation or not do_optimize:
                     t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
-                        sess.run([top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss], fd2)
+                        sess.run([top_cls_loss_cur, top_reg_loss_cur, fuse_cls_loss_cur, fuse_reg_loss_cur], fd2)
                 else:
                     _, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
-                        sess.run([self.solver_step, top_cls_loss, top_reg_loss, fuse_cls_loss, fuse_reg_loss],
+                        sess.run([self.solver_step, top_cls_loss_cur, top_reg_loss_cur, fuse_cls_loss_cur, fuse_reg_loss_cur],
                                  feed_dict=fd2)
             if log: self.log_prediction(batch_top_view, batch_front_view, batch_rgb_images,
                                         batch_gt_labels, batch_gt_boxes3d, 
                                         step=self.n_global_step, scope_name=scope_name, print_iou=True, score_threshold=cfg.RCNN_NMS_THRESHOLD)
+
+            # cumulation/clear
+            if do_optimize: # clear
+                self.top_cls_loss_sum = self.top_reg_loss_sum = self.fuse_cls_loss_sum = self.fuse_reg_loss_sum = 0.0
+            else: # cumulation
+                self.top_cls_loss_sum += t_cls_loss
+                self.top_reg_loss_sum += t_reg_loss
+                self.fuse_cls_loss_sum += f_cls_loss
+                self.fuse_reg_loss_sum += f_reg_loss
+
             return t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss
 
 # predictor is used for testing

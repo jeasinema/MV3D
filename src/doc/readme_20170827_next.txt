@@ -82,6 +82,22 @@ For another case, the best setting is training with NMS and testing without NMS(
 20. consider add a truncer to remove empty anchors(using inside_inds)
 
 
-!!! batch size rewrite!
+!!! batch size rewrite! NO
+-> 20170905
+e.g.
+top_cls_loss -> to compatible with original version, this is the target for optimize
+top_cls_loss_sum -> cumulation of loss, to feed in graph, equal to top_cls_loss
+top_cls_loss_cur -> immediate val of loss in cur iteration, mainly for cumulation and scalar log 
+
+-> for some optimizer, the method you handle nan(just set it to 0) may hurt them(consider 2nd derivative or momentum based method), so the proper way is to just do not do optimize this time
+but for common 1st derivative based optimizer, it is ok to do that, equal to do not generat delta for param this time.
+-> 20170905 the question above is still under reviewed
+
 !!! single rpn mode!!!  OK 
-!!! multiprocessing loading
+!!! multiprocessing loading  OK
+20170904 19:00
+1. add the weight for negative cls loss in RPN
+2. using real batch size == 1
+3. single rpn mode, speed up loading
+4. using 0.5/0.7 instead of 0.3/0.5 for pos/neg in rpn stage
+

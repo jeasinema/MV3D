@@ -716,6 +716,12 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     out_shape = (8, 3)
     stride = 8
 
+    # for mimic batch size
+    top_cls_loss_sum = tf.placeholder(shape=[], dtype=tf.float32, name='top_cls_loss_sum')
+    top_reg_loss_sum = tf.placeholder(shape=[], dtype=tf.float32, name='top_reg_loss_sum')
+    fuse_cls_loss_sum = tf.placeholder(shape=[], dtype=tf.float32, name='fuse_cls_loss_sum')
+    fuse_reg_loss_sum = tf.placeholder(shape=[], dtype=tf.float32, name='fuse_reg_loss_sum')
+
     top_anchors = tf.placeholder(shape=[None, 4], dtype=tf.int32, name='anchors')
     top_inside_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='inside_inds')  # use this to trunc empty anchor
 
@@ -747,7 +753,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             top_pos_inds = tf.placeholder(shape=[None], dtype=tf.int32, name='top_pos_ind')
             top_labels = tf.placeholder(shape=[None], dtype=tf.int32, name='top_label') # only contain the labels of selected sample after rpn_target
             top_targets = tf.placeholder(shape=[None, 4], dtype=tf.float32, name='top_target')
-            top_cls_loss, top_reg_loss = rpn_loss(top_scores, top_deltas, top_inds, top_pos_inds,
+            top_cls_loss_cur, top_reg_loss_cur = rpn_loss(top_scores, top_deltas, top_inds, top_pos_inds,
                                                   top_labels, top_targets)
     # with tf.variable_scope('top_feature_only'):
     #     if cfg.USE_RESNET_AS_TOP_BASENET==True:
@@ -895,7 +901,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
                 ], axis=1), num_hiddens=dim*num_class, name='fuse_deltas')
                 fuse_deltas = tf.reshape(fuse_deltas, (-1, num_class, *out_shape))
             else:
-                fuse_scores =  fuse_scores_without_rgb = fuse_scores_with_rgb
+                fuse_scores = fuse_scores_without_rgb = fuse_scores_with_rgb
                 fuse_probs = fuse_probs_without_rgb = fuse_probs_with_rgb
                 fuse_deltas = fuse_deltas_without_rgb = fuse_deltas_with_rgb
 
@@ -905,7 +911,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             # in this implementation, it does not do NMS at final step, so the only NMS is done before fusenet(using score from PRN)
             # no, the line above is not correct, just see function 'predict' in mv3d.py, it does nms at final step.
             with tf.variable_scope('loss-fuse'):
-                fuse_cls_loss, fuse_reg_loss = fuse_loss(fuse_scores, fuse_deltas, fuse_labels, fuse_targets)
+                fuse_cls_loss_cur, fuse_reg_loss_cur = fuse_loss(fuse_scores, fuse_deltas, fuse_labels, fuse_targets)
 
             if cfg.USE_HANDCRAFT_FUSION or cfg.USE_LEARNABLE_FUSION:
                 with tf.variable_scope('loss-with-rgb'):
@@ -914,8 +920,16 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
                 with tf.variable_scope('loss-without-rgb'):
                     fuse_cls_loss_without_rgb, fuse_reg_loss_without_rgb = fuse_loss(fuse_scores_without_rgb, fuse_deltas_without_rgb, fuse_labels, fuse_targets)
             else:
-                fuse_cls_loss_with_rgb = fuse_cls_loss_without_rgb = fuse_cls_loss 
-                fuse_reg_loss_with_rgb = fuse_reg_loss_without_rgb = fuse_reg_loss 
+                fuse_cls_loss_with_rgb = fuse_cls_loss_without_rgb = fuse_cls_loss_cur 
+                fuse_reg_loss_with_rgb = fuse_reg_loss_without_rgb = fuse_reg_loss_cur
+
+        # These for generate loss for optimizer
+        with tf.variable_scope('loss') as scope:
+            # optimize is controlled in fit_iterations, so there is no need for returning 0 when not doing optimize
+            top_cls_loss = tf.add(top_cls_loss_cur, top_cls_loss_sum)
+            top_reg_loss = tf.add(top_reg_loss_cur, top_reg_loss_sum)
+            fuse_cls_loss = tf.add(fuse_cls_loss_cur, fuse_cls_loss_sum)
+            fuse_reg_loss = tf.add(fuse_reg_loss_cur, fuse_reg_loss_sum)
 
 
     # with tf.variable_scope(conv3d_net_name) as scope:
@@ -936,6 +950,18 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
 
     return {
+        # for mimic batch size
+        # These for feed in cumulative loss
+        'top_cls_loss_sum': top_cls_loss_sum,
+        'top_reg_loss_sum': top_reg_loss_sum,
+        'fuse_cls_loss_sum': fuse_cls_loss_sum,
+        'fuse_reg_loss_sum': fuse_reg_loss_sum,
+        # These for return loss for cumulation
+        'top_cls_loss_cur': top_cls_loss_cur,
+        'top_reg_loss_cur': top_reg_loss_cur,
+        'fuse_cls_loss_cur': fuse_cls_loss_cur,
+        'fuse_reg_loss_cur': fuse_reg_loss_cur,
+
         'top_anchors':top_anchors,
         'top_inside_inds':top_inside_inds,
         'top_view':top_view,
@@ -945,6 +971,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         'front_rois':front_rois,
         'rgb_rois': rgb_rois,
 
+        # These are loss for optimizer
         'top_cls_loss': top_cls_loss,
         'top_reg_loss': top_reg_loss,
         'fuse_cls_loss': fuse_cls_loss,

@@ -903,7 +903,7 @@ class BatchLoading3:
         if use_thread:
             self.prepr_data=Queue()
             #self.lodaer_processing = threading.Thread(target=self.loader)
-            self.lodaer_processing = [Process(target=self.loader) for i in range(6)]
+            self.lodaer_processing = [Process(target=self.loader) for i in range(cpu_count()//2)]
         else:
             self.preproc_data_queue = Queue()
             self.buffer_blocks = [Array('h', 41246691) for i in range(queue_size)]
@@ -918,7 +918,7 @@ class BatchLoading3:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.loader_need_exit.value=True
         if self.require_log: print('set loader_need_exit True')
-        self.lodaer_processing.join()
+        [i.join() for i in self.lodaer_processing]
         if self.require_log: print('exit lodaer_processing')
 
     def keep_gt_inside_range(self, train_gt_labels, train_gt_boxes3d):
