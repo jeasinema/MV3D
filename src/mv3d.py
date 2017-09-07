@@ -17,11 +17,11 @@ from net.rcnn_nms_op    import rcnn_nms, draw_rcnn_nms, draw_rcnn,draw_box3d_on_
 from net.rpn_target_op  import draw_rpn_gt, draw_rpn_targets, draw_rpn_labels
 from net.rcnn_target_op import draw_rcnn_targets, draw_rcnn_labels
 from net.utility.draw import draw_box3d_on_camera
+from net.utility.remove_empty_box import remove_empty_anchor
 import net.utility.file as utilfile
 from config import cfg
 import config
 from net.processing.boxes import non_max_suppress
-from net.processing.boxes import remove_empty_anchors
 import utils.batch_loading as dataset
 from utils.timer import timer
 from keras import backend as K
@@ -167,6 +167,7 @@ class MV3D(object):
 
         # anchors
         self.top_rpn_stride=None
+
         self.num_class = 2  # incude background
 
         ratios=np.array([0.5,1,2], dtype=np.float32)
@@ -197,7 +198,7 @@ class MV3D(object):
         self.sess = tf.Session(config=tf.ConfigProto(
             gpu_options=self.gpu_options,
             device_count={
-                "GPU" : cfg.GPU_USE_COUNT           
+                "GPU" : cfg.GPU_USE_COUNT,  
             }
         ))
         self.use_pretrain_weights=[]
@@ -268,8 +269,8 @@ class MV3D(object):
         self.rgb_image = rgb_image
         self.front_view = front_view
 
-         # remove empty anchors
-        self.anchors_inside_inds = remove_empty_anchors(self.top_view, self.top_view_anchors, self.anchors_inside_inds)  # only support batch size  == 1
+        # remove empty anchors
+        self.anchors_inside_inds = remove_empty_anchor(self.top_view[0], self.top_view_anchors, cfg.REMOVE_THRES)  # only support batch size  == 1
 
         fd1 = {
             self.net['top_view']: self.top_view,
@@ -332,7 +333,7 @@ class MV3D(object):
         self.front_view = front_view
 
         # remove empty anchors
-        self.anchors_inside_inds = remove_empty_anchors(self.top_view, self.top_view_anchors, self.anchors_inside_inds)  # only support batch size  == 1
+        self.anchors_inside_inds = remove_empty_anchor(self.top_view[0], self.top_view_anchors, cfg.REMOVE_THRES)  # only support batch size  == 1
 
         fd1 = {
             self.net['top_view']: self.top_view,
@@ -779,7 +780,7 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    w1, w2 = 1.0, 1.0
+                    w1, w2 = 1.0, 0.05
                     self.targets_loss = w1 * self.top_cls_loss + w2 * self.top_reg_loss
                     self.targets_loss_cur = w1 * self.top_cls_loss_cur + w2 * self.top_reg_loss_cur
 
@@ -815,6 +816,7 @@ class Trainer(MV3D):
                     ValueError('unknow train_target set')
 
                 tf.summary.scalar('targets_loss', self.targets_loss_cur)
+                tf.summary.scalar('target_loss_sum', self.targets_loss)
 
                 # for RPN only mode
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
@@ -856,6 +858,8 @@ class Trainer(MV3D):
 
             self.load_weights(pre_trained_weights)
             if continue_train: self.load_progress()
+
+            tf.get_default_graph().finalize()  # lock the graph
 
 
     def anchors_details(self):
@@ -1031,7 +1035,7 @@ class Trainer(MV3D):
                         do_optimize = True
 
                     # fit
-                    t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss= \
+                    t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
                         self.fit_iteration(self.batch_rgb_images, self.batch_top_view, self.batch_front_view,
                                            self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
                                            is_validation =is_validation, summary_it=summary_it,
@@ -1059,7 +1063,7 @@ class Trainer(MV3D):
                     self.save_progress()
                 except:
                     self.save_progress()
-                sys.exit()
+                return
 
 
             if cfg.TRAINING_TIMER:
@@ -1093,13 +1097,22 @@ class Trainer(MV3D):
 
         self.batch_gt_top_boxes = data.box3d_to_top_box(batch_gt_boxes3d[0])
 
-        # remove empty anchors
-        self.anchors_inside_inds = remove_empty_anchors(self.batch_top_view, self.top_view_anchors, self.anchors_inside_inds)  # only support batch size  == 1
-
-        ## rpn_target just judge if an anchor is a positive/negative/unused sample(do not fuse the gt!)
-        ## And using random method to balance the amount of positive/negative sample.(Introduced in SSD)
-        ## Also cal batch_top_labels, batch_top_targets(moving the bbox) for cal rpn_loss.
-        ## attention that an anchor can be "unused" if it has no iou with any gt boxes.
+        # for remove empty anchors
+        self.anchors_inside_inds = remove_empty_anchor(batch_top_view[0], self.top_view_anchors, cfg.REMOVE_THRES)  # only support batch size  == 1
+        # too slow..deprecated
+        # fd0 = {
+        #     net['top_view']: batch_top_view,
+        #     net['top_anchors']: self.top_view_anchors,
+        #     net['top_inside_inds']: self.anchors_inside_inds,  # here is just for clip those anchors which is not in the visible range of rgb?
+        #     blocks.IS_TRAIN_PHASE: True,
+        #     K.learning_phase(): 1
+        # } 
+        # self.anchors_inside_inds = sess.run([net['top_no_empty_inds']], fd0)
+        # from IPython import embed; embed()
+        # rpn_target just judge if an anchor is a positive/negative/unused sample(do not fuse the gt!)
+        # And using random method to balance the amount of positive/negative sample.(Introduced in SSD)
+        # Also cal batch_top_labels, batch_top_targets(moving the bbox) for cal rpn_loss.
+        # attention that an anchor can be "unused" if it has no iou with any gt boxes.
         # ATTENTION: Although here we just cal the "raw" anchor's delta with gt, but in MV3d_net, 
         # when we use batch_top_labels and batch_top_target to cal the rpn loss, we also use delta cal by RPN(which is not exported).
         # self.top_view_anchors are generated offline by make_anchors, but its amount(50*50*9) is the same as delta/score generated in RPN(without nms)

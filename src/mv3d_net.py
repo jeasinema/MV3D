@@ -644,7 +644,7 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
             logits=tf.gather(rcnn_scores, pos_inds), labels=tf.gather(rcnn_labels, pos_inds)))
         rcnn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=rcnn_scores, labels=rcnn_labels))
-        rcnn_cls_loss = tf.add(tf.multiply(rcnn_cls_loss_pos, 3.0-1.0), tf.multiply(rcnn_cls_loss_all, 1.0))
+        rcnn_cls_loss = tf.add(tf.multiply(rcnn_cls_loss_pos, 2.0-1.0), tf.multiply(rcnn_cls_loss_all, 1.0))
 
     with tf.variable_scope('get_detals'):
         num = tf.identity( tf.shape(deltas)[0], 'num')
@@ -668,10 +668,9 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
 
     return rcnn_cls_loss, rcnn_reg_loss
 
-
 def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
 
-    def modified_smooth_l1( box_preds, box_targets, sigma=3.0):
+    def modified_smooth_l1( box_preds, box_targets, sigma=2.0):
         '''
             ResultLoss = outside_weights * SmoothL1(inside_weights * (box_pred - box_targets))
             SmoothL1(x) = 0.5 * (sigma * x)^2,    if |x| < 1 / sigma^2
@@ -696,7 +695,7 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
 
     rpn_cls_loss_pos = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores_pos, labels=rpn_labels_pos))
     rpn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores, labels=rpn_labels))
-    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 3.0-1.0), tf.multiply(rpn_cls_loss_all, 1.0))
+    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 2.0-1.0), tf.multiply(rpn_cls_loss_all, 1.0))
 
     deltas1       = tf.reshape(deltas,[-1,4])
     rpn_deltas    = tf.gather(deltas1, pos_inds)  # remove ignore label
@@ -710,6 +709,46 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
     rpn_cls_loss = tf.where(tf.is_nan(rpn_cls_loss), tf.zeros_like(rpn_cls_loss), rpn_cls_loss)
 
     return rpn_cls_loss, rpn_reg_loss
+
+def remove_empty_anchor(top_view, top_anchors, top_inside_inds):
+    # input:
+    # top_view: (B, H, W, C)
+    # top_anchors: (N, 4)
+    # top_inside_inds: (n)
+    def cond(no_empty_inds, index):
+        nonlocal top_view, top_anchors
+        return tf.less(index, cfg.ANCHOR_AMOUNT)
+
+    def body(no_empty_inds, index):
+        nonlocal top_view, top_anchors
+        # doing integration
+        x1 = top_anchors[index][0]
+        y1 = top_anchors[index][1]
+        x2 = top_anchors[index][2]
+        y2 = top_anchors[index][3]
+        res = tf.reduce_sum(top_view[:, x1:x2, y1:y2, :])
+        no_empty_inds = tf.cond(
+            tf.less_equal(res, 0.),
+            lambda: no_empty_inds,
+            lambda: tf.concat([no_empty_inds, index*tf.ones(1, dtype=tf.int32)], axis=0),
+        )
+        index = tf.add(index, 1)
+        return no_empty_inds, index
+
+    index = tf.constant(0)
+    top_no_empty_inds = tf.zeros(1, dtype=tf.int32)
+    top_no_empty_inds, _ = tf.while_loop(
+        cond,
+        body,
+        [top_no_empty_inds, index],
+        shape_invariants=[tf.TensorShape([None]), index.get_shape()],
+        parallel_iterations=512,
+        back_prop=False,
+        name='remove_empty_anchor'
+    )
+    top_no_empty_inds = top_no_empty_inds[1:]  # remove the first redundant one
+    return top_no_empty_inds
+
 
 def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
@@ -737,6 +776,8 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     point_cloud_rois = tf.placeholder(shape=[None, None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='point_cloud_rois')
     voxel_rois = tf.placeholder(shape=[None, None, cfg.VOXEL_ROI_L, cfg.VOXEL_ROI_W, cfg.VOXEL_ROI_H], dtype=tf.float32, name='voxel_rois')
 
+    with tf.variable_scope('remove_empty_anchor'):
+        top_no_empty_inds = remove_empty_anchor(top_view, top_anchors, top_inside_inds)
 
     with tf.variable_scope(top_view_rpn_name):
         # top feature
@@ -926,7 +967,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
         # These for generate loss for optimizer
         with tf.variable_scope('loss') as scope:
             # optimize is controlled in fit_iterations, so there is no need for returning 0 when not doing optimize
-            top_cls_loss = tf.add(top_cls_loss_cur, top_cls_loss_sum)
+            top_cls_loss = tf.add(top_cls_loss_cur, top_cls_loss_sum)  # top_cls_loss_cur will hold the path for backwards
             top_reg_loss = tf.add(top_reg_loss_cur, top_reg_loss_sum)
             fuse_cls_loss = tf.add(fuse_cls_loss_cur, fuse_cls_loss_sum)
             fuse_reg_loss = tf.add(fuse_reg_loss_cur, fuse_reg_loss_sum)
@@ -964,6 +1005,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
         'top_anchors':top_anchors,
         'top_inside_inds':top_inside_inds,
+        'top_no_empty_inds':top_no_empty_inds,
         'top_view':top_view,
         'front_view':front_view,
         'rgb_images':rgb_images,

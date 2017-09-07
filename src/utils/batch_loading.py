@@ -870,7 +870,7 @@ class Loading3DOP(object):
 class BatchLoading3:
 
     def __init__(self, bags={}, tags={}, queue_size=20, require_shuffle=False,
-                 require_log=False, is_testset=False, batch_size=1, use_precal_view=False):
+                 require_log=False, is_testset=False, batch_size=1, use_precal_view=False, use_multi_process_num=cpu_count()):
         self.is_testset = is_testset
         self.use_precal_view = use_precal_view
         self.shuffled = require_shuffle
@@ -880,6 +880,7 @@ class BatchLoading3:
         self.raw_lidar = Lidar(tags)
         self.tags = self.raw_lidar.get_tags()
         self.batch_size = batch_size
+        self.use_multi_process_num = use_multi_process_num
         print(len(self.raw_img.get_tags()), len(self.raw_lidar.get_tags()), len(self.raw_tracklet.get_tags()))
         assert(len(self.raw_img.get_tags()) == \
                len(self.raw_lidar.get_tags()) == \
@@ -900,15 +901,12 @@ class BatchLoading3:
         self.cache_size = queue_size
         self.loader_need_exit = Value('i', 0)
 
-        if use_thread:
-            self.prepr_data=Queue()
-            #self.lodaer_processing = threading.Thread(target=self.loader)
-            self.lodaer_processing = [Process(target=self.loader) for i in range(cpu_count()//2)]
-        else:
-            self.preproc_data_queue = Queue()
-            self.buffer_blocks = [Array('h', 41246691) for i in range(queue_size)]
-            self.blocks_usage = Array('i', range(queue_size))
-            self.lodaer_processing = Process(target=self.loader)
+        self.prepr_data=Queue()
+        self.lodaer_processing = [Process(target=self.loader) for i in range(self.use_multi_process_num)]
+            # self.preproc_data_queue = Queue()
+            # self.buffer_blocks = [Array('h', 41246691) for i in range(queue_size)]
+            # self.blocks_usage = Array('i', range(queue_size))
+            # self.lodaer_processing = Process(target=self.loader)
         [i.start() for i in self.lodaer_processing]
 
 
@@ -1031,7 +1029,7 @@ class BatchLoading3:
 
 
     def loader(self):
-        if use_thread:
+        if True:
             while self.loader_need_exit.value == 0:
 
                 #if len(self.prepr_data) >=self.cache_size:
@@ -1066,7 +1064,7 @@ class BatchLoading3:
 
 
     def load(self):
-        if use_thread:
+        if True:
             #while len(self.prepr_data)==0:
             while self.prepr_data.qsize() ==0:
                 time.sleep(1)

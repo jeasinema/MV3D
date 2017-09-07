@@ -44,9 +44,13 @@ __C.BOX3D_Z_MIN=-2.52
 __C.BOX3D_Z_MAX=-1.02
 
 __C.USE_FRONT=1
-__C.GPU_AVAILABLE='2'
+__C.GPU_AVAILABLE='0'
 __C.GPU_USE_COUNT=1
 __C.GPU_MEMORY_FRACTION=1
+
+# for remove empty anchor
+__C.ANCHOR_AMOUNT=120000 # 600*800/4/4*4
+__C.REMOVE_THRES=0.0
 
 ### Hyper-parameters
 # for NMS

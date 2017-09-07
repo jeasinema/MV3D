@@ -130,7 +130,7 @@ def non_max_suppress(boxes, scores, num_classes,
 # unimplemented
 def remove_empty_anchors(top_view, anchors, inside_inds):
     #input:
-    # top_view:(N, W, L, C)
+    # top_view:(B, W, L, C)
     # anchors: (N, 4)
     # inside_inds: (N)
     return inside_inds

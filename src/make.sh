@@ -8,3 +8,6 @@ ln -s $(pwd)/net/lib/nms/gpu_nms.cpython-35m-x86_64-linux-gnu.so ./net/processin
 ln -s $(pwd)/net/lib/nms/cpu_nms.cpython-35m-x86_64-linux-gnu.so ./net/processing/cpu_nms.cpython-35m-x86_64-linux-gnu.so
 ln -s $(pwd)/net/lib/utils/bbox.cpython-35m-x86_64-linux-gnu.so ./net/processing/cython_bbox.cpython-35m-x86_64-linux-gnu.so
 
+# compile remove empty box kernel
+GPU_ARCH="sm_52"
+nvcc nvcc --cubin -arch $GPU_ARCH -I/usr/local/lib/python3.5/site-packages/pycuda-2017.1.1-py3.5-linux-x86_64.egg/pycuda/cuda ./net/utility/remove_empty_box_kernel.cu

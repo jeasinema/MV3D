@@ -82,7 +82,7 @@ For another case, the best setting is training with NMS and testing without NMS(
 20. consider add a truncer to remove empty anchors(using inside_inds)
 
 
-!!! batch size rewrite! NO
+!!! batch size rewrite! OK
 -> 20170905
 e.g.
 top_cls_loss -> to compatible with original version, this is the target for optimize
@@ -100,4 +100,33 @@ but for common 1st derivative based optimizer, it is ok to do that, equal to do 
 2. using real batch size == 1
 3. single rpn mode, speed up loading
 4. using 0.5/0.7 instead of 0.3/0.5 for pos/neg in rpn stage
+
+20170905 18:00
+1. set batch size to 16/8, weight fixed at 1
+2.shuffle the dataset
+it seems that batch size is ok, but the model cannot continue to converge when large batch size... but it do converge faster
+so set it to 2/4
+
+20170906 12:00
+1. reset the batch size to 1 -> a train
+2. set reg loss to 0.05 -> a train  
+	settings with 1+2 -> result is bad...reg cannot converge at 150k
+
+It seems that after enlarge the input size, all the result do not converge well.... and large batch size is really bad for kitti...
+
+
+20170906 19:00
+1. rpn with batch size == 1 weight == 0.05
+	-> result is bad...reg cannot converge at 150k
+2. rpn with batch size  == 8/16 lr == 0.008/0.016 weight =0.5
+	-> cannot converge as fast as batch size == 1
+ now all the batch size > 1 cannot converget the regress well
+damnit! all bad! reg loss not coverge!!!
+
+20170907 22:30
+1. removal(thresh=0), batch size 1, 0.05
+2. removal , batch size 1 weight 0.5
+3. removal batch size 1  weight 1
+4. removal batch size 8 weigth 0.5 lr=0.008
+
 
