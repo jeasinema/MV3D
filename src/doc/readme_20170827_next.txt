@@ -124,9 +124,9 @@ It seems that after enlarge the input size, all the result do not converge well.
 damnit! all bad! reg loss not coverge!!!
 
 20170907 22:30
-1. removal(thresh=0), batch size 1, 0.05
-2. removal , batch size 1 weight 0.5
-3. removal batch size 1  weight 1
-4. removal batch size 8 weigth 0.5 lr=0.008
+1. removal (thresh=0), batch size 1, 0.05 rpn pos=2
+2. removal batch size 1 weight 0.5 rpn pos=2
+3. removal batch size 1  weight 1  rpn pos=2
+4. removal batch size 4 weigth 0.5 lr=0.004 rpn pos=2
 
 

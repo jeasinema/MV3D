@@ -780,7 +780,7 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    w1, w2 = 1.0, 0.05
+                    w1, w2 = 1.0, 0.5
                     self.targets_loss = w1 * self.top_cls_loss + w2 * self.top_reg_loss
                     self.targets_loss_cur = w1 * self.top_cls_loss_cur + w2 * self.top_reg_loss_cur
 
