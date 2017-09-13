@@ -165,6 +165,7 @@ class MV3D(object):
 
     def __init__(self, top_shape, front_shape, rgb_shape, debug_mode=False, log_tag=None, weigths_dir=None):
 
+        print('fuck 0.0!')
         # anchors
         self.top_rpn_stride=None
 
@@ -203,8 +204,10 @@ class MV3D(object):
         ))
         self.use_pretrain_weights=[]
 
+        print('fuck 0.1!')
         self.build_net(top_shape, front_shape, rgb_shape)
 
+        print('fuck 0.2!')
         #init subnet
         self.tag=log_tag
         self.ckpt_dir = os.path.join(cfg.CHECKPOINT_DIR, log_tag) if weigths_dir == None else weigths_dir
@@ -217,6 +220,7 @@ class MV3D(object):
         self.subnet_fusion = Net(prefix='MV3D', scope_name=mv3d_net.fusion_net_name,
                                  checkpoint_dir=self.ckpt_dir)
  
+        print('fuck 0.3!')
         # set anchor boxes
         self.top_rpn_stride = self.net['top_feature_rpn_stride']
         top_feature_shape = get_top_feature_shape(top_shape, self.top_rpn_stride)
@@ -249,6 +253,7 @@ class MV3D(object):
         # about tensorboard.
         self.tb_dir = log_tag if log_tag != None else strftime("%Y_%m_%d_%H_%M", localtime())
 
+        print('fuck 0.4!')
 
     def dump_weigths(self, dir):
         command = 'cp %s %s -r' % (self.ckpt_dir, dir)
@@ -711,14 +716,17 @@ class Predictor_for_test(MV3D):
 class Trainer(MV3D):
 
     def __init__(self, train_set, validation_set, pre_trained_weights, train_targets, log_tag=None,
-                 continue_train=False, batch_size=1, lr=0.001):
+                 continue_train=False, batch_size=1, lr=0.001, debug=False):
+        print('fuck -1!')
         top_shape, front_shape, rgb_shape = train_set.get_shape()
+        print('fuck 0!')
         MV3D.__init__(self, top_shape, front_shape, rgb_shape, log_tag=log_tag)
         self.train_set = train_set
         self.validation_set = validation_set
         self.train_target= train_targets
         self.batch_size=batch_size
         self.lr = lr
+        self.debug = debug
 
         self.train_summary_writer = None
         self.val_summary_writer = None
@@ -729,8 +737,10 @@ class Trainer(MV3D):
         self.targets_loss_sum = 0
         self.targets_loss_cur = 0
 
+        print('fuck1!')
         # saver
         self.saver = tf.train.Saver()
+        print('fuck2!')
 
         with self.sess.as_default():
 
@@ -780,7 +790,7 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    w1, w2 = 1.0, 0.5
+                    w1, w2 = 1.0, 1.0
                     self.targets_loss = w1 * self.top_cls_loss + w2 * self.top_reg_loss
                     self.targets_loss_cur = w1 * self.top_cls_loss_cur + w2 * self.top_reg_loss_cur
 
@@ -816,7 +826,7 @@ class Trainer(MV3D):
                     ValueError('unknow train_target set')
 
                 tf.summary.scalar('targets_loss', self.targets_loss_cur)
-                tf.summary.scalar('target_loss_sum', self.targets_loss)
+                # tf.summary.scalar('target_loss_sum', self.targets_loss)
 
                 # for RPN only mode
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
@@ -828,8 +838,12 @@ class Trainer(MV3D):
                     tf.summary.scalar('fuse_cls_loss', self.fuse_cls_loss_cur)
                     tf.summary.scalar('fuse_reg_loss', self.fuse_reg_loss_cur)
 
-                self.solver_step = solver.minimize(loss = self.targets_loss,var_list=train_var_list)
+                print('fuck3!')
+                # too slow
+                # self.solver_step = solver.minimize(loss = self.targets_loss,var_list=train_var_list)
+                self.solver_step = solver.minimize(loss = self.targets_loss_cur, var_list=train_var_list)
 
+                print('fuck4!')
 
             # summary.FileWriter
             train_writer_dir = os.path.join(cfg.LOG_DIR, 'tensorboard', self.tb_dir + '_train')
@@ -844,14 +858,18 @@ class Trainer(MV3D):
                    print('\nClear old summary file: %s' % command)
                    os.system(command)
 
+            print('fuck5!')
+            # too slow 
             self.train_summary_writer = tf.summary.FileWriter(train_writer_dir,graph=tf.get_default_graph())
             self.val_summary_writer = tf.summary.FileWriter(val_writer_dir)
 
+            print('fuck6!')
             summ = tf.summary.merge_all()
             self.summ = summ
 
             self.variables_initializer()
 
+            print('fuck7!')
             #remove old weigths
             if continue_train == False:
                 self.clean_weights(train_targets)
@@ -860,7 +878,7 @@ class Trainer(MV3D):
             if continue_train: self.load_progress()
 
             tf.get_default_graph().finalize()  # lock the graph
-
+            print('fuck8!')
 
     def anchors_details(self):
         pos_indes=self.batch_top_pos_inds
@@ -1040,13 +1058,16 @@ class Trainer(MV3D):
                                            self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
                                            is_validation =is_validation, summary_it=summary_it,
                                            summary_runmeta=summary_runmeta, log=log_this_iter, do_optimize=do_optimize)
-
+                    if sum(np.isnan([t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss])) > 0:
+                        print('have nan loss!')
+                        assert(0)
 
                     if print_loss:
                         self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
                                            (step_name, self.n_global_step, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss))
 
                     if iter%ckpt_save_step==0:
+                        print('start save weights')
                         self.save_weights(self.train_target, iter)
                         print('Save target at {}'.format(self.ckpt_dir))
 
@@ -1119,6 +1140,9 @@ class Trainer(MV3D):
         self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
+        # skip when no pos gt in rpn 
+        if len(self.batch_top_pos_inds) <= 0:
+            return  0.0, 0.0, 0.0, 0.0
 
         # Single RPN mode(Fast)
         if set([mv3d_net.top_view_rpn_name]) == set(self.train_target):
@@ -1140,6 +1164,7 @@ class Trainer(MV3D):
             # attention: this step include rpn stage NMS, and applied the delta to proposals
             self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
                 sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
+            # in fact, the model will be repeatedly cal under this manner
             fd2 = {
                 **fd1,
                 net['top_inds']: self.batch_top_inds,
@@ -1226,6 +1251,10 @@ class Trainer(MV3D):
             # batch_fuse_targets is the 3b bbox delta between all the sample and corresponding gt boxes3d, negative sample's targets are 0
             self.batch_top_rois, self.batch_fuse_labels, self.batch_fuse_targets = \
                 fusion_target(self.batch_proposals, batch_gt_labels[0], self.batch_gt_top_boxes, batch_gt_boxes3d[0])
+
+            # skip when no pos gt 
+            if len(self.batch_top_rois) <= 0:
+                return 0.0, 0.0, 0.0, 0.0
 
             # need to make sure that the rois cannot exceed the bounding of target view
             # -> no need, since roi_pooling op has done the boundary clip

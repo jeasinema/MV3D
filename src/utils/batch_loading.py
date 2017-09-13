@@ -587,12 +587,12 @@ class KittiLoading(object):
             self.rgb_shape = tmp[1].shape
         except:
             # FIXME
-            self.top_shape = (800, 500, 10)
+            self.top_shape = (800, 600, 27)
             self.front_shape = (cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3)
             self.rgb_shape = (cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH, 3)
 
         #self.loader_worker = threading.Thread(target=self.loader_worker_main)
-        self.loader_worker = [Process(target=self.loader_worker_main) for i in cpu_count()]  
+        self.loader_worker = [Process(target=self.loader_worker_main) for i in range(cpu_count())]  
         self.work_exit = False
         [i.start() for i in self.loader_worker]
 
@@ -902,12 +902,15 @@ class BatchLoading3:
         self.loader_need_exit = Value('i', 0)
 
         self.prepr_data=Queue()
-        self.lodaer_processing = [Process(target=self.loader) for i in range(self.use_multi_process_num)]
+        if self.use_multi_process_num > 0:
+            self.loader_processing = [Process(target=self.loader) for i in range(self.use_multi_process_num)]
+        else:
+            self.loader_processing = [threading.Thread(target=self.loader)]
             # self.preproc_data_queue = Queue()
             # self.buffer_blocks = [Array('h', 41246691) for i in range(queue_size)]
             # self.blocks_usage = Array('i', range(queue_size))
-            # self.lodaer_processing = Process(target=self.loader)
-        [i.start() for i in self.lodaer_processing]
+            # self.loader_processing = Process(target=self.loader)
+        [i.start() for i in self.loader_processing]
 
 
     def __enter__(self):
@@ -916,8 +919,8 @@ class BatchLoading3:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.loader_need_exit.value=True
         if self.require_log: print('set loader_need_exit True')
-        [i.join() for i in self.lodaer_processing]
-        if self.require_log: print('exit lodaer_processing')
+        [i.join() for i in self.loader_processing]
+        if self.require_log: print('exit loader_processing')
 
     def keep_gt_inside_range(self, train_gt_labels, train_gt_boxes3d):
         train_gt_labels = np.array(train_gt_labels, dtype=np.int32)

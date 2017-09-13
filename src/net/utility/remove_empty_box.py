@@ -27,6 +27,7 @@ def remove_empty_anchor(view, anchors, limit):
     # input:
     # ahchors: (N, 4) (x1, y1, x2, y2)
     # view: (W, H, C) 
+
     mod = cuda.module_from_buffer(module_buff)
     func = mod.get_function('_Z12remove_emptyPfPiS_S0_S0_')
 

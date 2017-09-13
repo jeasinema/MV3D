@@ -106,14 +106,14 @@ if __name__ == '__main__':
         training_dataset = {
             '2011_09_26': [
               '0070', '0015', '0052', '0035', '0061', '0002', '0018', '0013', '0032', '0056', '0017', '0011',
-              '0036', '0005', '0014', '0048', ' 0059',
-              '0057', '0084', '0079', '0051', '0093', '0064', '0027', '0086', '0022', '0023', '0046', '0029', '0087', '0091'
+              '0001', '0005', '0014', '0020', ' 0059',
+              '0019', '0084', '0028', '0051', '0060', '0064', '0027', '0086', '0022', '0023', '0046', '0029', '0087', '0091'
             ]
         }
 
         validation_dataset = {
             '2011_09_26': [
-              '0001', '0019', '0028', '0020', '0039', '0060'
+              '0036', '0057', '0079', '0048', '0039', '0093'
             ]
         }
 
@@ -127,8 +127,8 @@ if __name__ == '__main__':
     #with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
         #with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,
     #                      queue_size=1, require_shuffle=True) as validation:
-    with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=True, queue_size=100, use_multi_process_num=4) as training:
-      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=100, use_multi_process_num=1) as validation:
+    with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=True, queue_size=30, use_multi_process_num=8) as training:
+      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=30, use_multi_process_num=1) as validation:
             train = mv3d.Trainer(train_set=training, validation_set=validation,
                                  pre_trained_weights=weights, train_targets=targets, log_tag=tag,
                                  continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)

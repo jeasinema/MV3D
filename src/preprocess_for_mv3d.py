@@ -23,7 +23,7 @@ dataset = {
 p = data.Preprocess()
 lidar = Lidar(dataset)
 
-base_dataset_path="/data/mxj/kitti/object"
+base_dataset_path="~/data/kitti/"
 
 def handler_train(fname):
 	scan = np.fromfile(fname, dtype=np.float32).reshape((-1, 4))
@@ -69,11 +69,11 @@ def main_test():
 
 def main_raw():
 	tags = lidar.get_paths_mapping()
-	pro = Pool()
+	pro = Pool(32)
 	pro.map(handler_raw, tags)
 
 
 if __name__ == '__main__':
-	#main_raw()
-	main_train()
+	main_raw()
+	#main_train()
 	#main_test()

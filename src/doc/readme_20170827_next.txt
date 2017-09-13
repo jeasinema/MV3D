@@ -128,5 +128,11 @@ damnit! all bad! reg loss not coverge!!!
 2. removal batch size 1 weight 0.5 rpn pos=2
 3. removal batch size 1  weight 1  rpn pos=2
 4. removal batch size 4 weigth 0.5 lr=0.004 rpn pos=2
+result are bad, not converge well
 
-
+20170912 
+both remove no gt 
+1. fixed at batch size 1, removal(thresh=0), 0.05, rpn pos=2
+2. fixed at batch size 1, removal(thresh=0), 0.5, rpn pos=2
+3. fixed at batch size 1, removal(thresh=0), 1, rpn pos=2
+seems that the dataset is very dirty(many without gt...)

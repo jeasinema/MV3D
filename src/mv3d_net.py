@@ -4,21 +4,21 @@ from net.rpn_nms_op import tf_rpn_nms
 from net.roipooling_op import roi_pool as tf_roipooling
 from config import cfg
 from net.resnet import ResnetBuilder
-from keras.models import Model
-import keras.applications.xception as xcep
-from keras.preprocessing import image
-from keras.models import Model
-from keras import layers
-from keras.layers import (
-    Input,
-    Activation,
-    Dense,
-    Flatten,
-    SeparableConv2D,
-    Conv2D,
-    BatchNormalization, 
-    MaxPooling2D
-    )
+# from keras.models import Model
+# import keras.applications.xception as xcep
+# from keras.preprocessing import image
+# from keras.models import Model
+# from keras import layers
+# from keras.layers import (
+#     Input,
+#     Activation,
+#     Dense,
+#     Flatten,
+#     SeparableConv2D,
+#     Conv2D,
+#     BatchNormalization, 
+#     MaxPooling2D
+#     )
 import numpy as np
 
 top_view_rpn_name = 'top_view_rpn'
@@ -271,116 +271,116 @@ def rgb_feature_net_r(input):
 
 
 def rgb_feature_net_x(input):
-
     # Xception feature extractor
 
-    batch_size, img_height, img_width, img_channel = input.get_shape().as_list()
+    # batch_size, img_height, img_width, img_channel = input.get_shape().as_list()
 
-    # with tf.variable_scope('xception_model'):
-    #     base_model= xcep.Xception(include_top=False, weights=None,
-    #                               input_shape=(img_height, img_width, img_channel ))
-    # # print(base_model.summary())
-    #
-    #     base_model_input = base_model.get_layer('input_2').input
-    #     base_model_output = base_model.get_layer('block12_sepconv3_bn').output
-    # # print(model.summary())
+    # # with tf.variable_scope('xception_model'):
+    # #     base_model= xcep.Xception(include_top=False, weights=None,
+    # #                               input_shape=(img_height, img_width, img_channel ))
+    # # # print(base_model.summary())
+    # #
+    # #     base_model_input = base_model.get_layer('input_2').input
+    # #     base_model_output = base_model.get_layer('block12_sepconv3_bn').output
+    # # # print(model.summary())
 
-    with tf.variable_scope('preprocess'):
-        block = maxpool(input, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
-        block = xcep.preprocess_input(block)
+    # with tf.variable_scope('preprocess'):
+    #     block = maxpool(input, kernel_size=(2,2), stride=[1,2,2,1], padding='SAME', name='4' )
+    #     block = xcep.preprocess_input(block)
 
-    with tf.variable_scope('feature_extract'):
-        # keras/applications/xception.py
-        print('build Xception')
-        x = Conv2D(32, (3, 3), strides=(2, 2), use_bias=False, name='block1_conv1')(block)
-        x = BatchNormalization(name='block1_conv1_bn')(x)
-        x = Activation('relu', name='block1_conv1_act')(x)
-        x = Conv2D(64, (3, 3), use_bias=False, name='block1_conv2')(x)
-        x = BatchNormalization(name='block1_conv2_bn')(x)
-        x = Activation('relu', name='block1_conv2_act')(x)
+    # with tf.variable_scope('feature_extract'):
+    #     # keras/applications/xception.py
+    #     print('build Xception')
+    #     x = Conv2D(32, (3, 3), strides=(2, 2), use_bias=False, name='block1_conv1')(block)
+    #     x = BatchNormalization(name='block1_conv1_bn')(x)
+    #     x = Activation('relu', name='block1_conv1_act')(x)
+    #     x = Conv2D(64, (3, 3), use_bias=False, name='block1_conv2')(x)
+    #     x = BatchNormalization(name='block1_conv2_bn')(x)
+    #     x = Activation('relu', name='block1_conv2_act')(x)
 
-        residual = Conv2D(128, (1, 1), strides=(2, 2),
-                          padding='same', use_bias=False)(x)
-        residual = BatchNormalization()(residual)
+    #     residual = Conv2D(128, (1, 1), strides=(2, 2),
+    #                       padding='same', use_bias=False)(x)
+    #     residual = BatchNormalization()(residual)
 
-        x = SeparableConv2D(128, (3, 3), padding='same', use_bias=False, name='block2_sepconv1')(x)
-        x = BatchNormalization(name='block2_sepconv1_bn')(x)
-        x = Activation('relu', name='block2_sepconv2_act')(x)
-        x = SeparableConv2D(128, (3, 3), padding='same', use_bias=False, name='block2_sepconv2')(x)
-        x = BatchNormalization(name='block2_sepconv2_bn')(x)
+    #     x = SeparableConv2D(128, (3, 3), padding='same', use_bias=False, name='block2_sepconv1')(x)
+    #     x = BatchNormalization(name='block2_sepconv1_bn')(x)
+    #     x = Activation('relu', name='block2_sepconv2_act')(x)
+    #     x = SeparableConv2D(128, (3, 3), padding='same', use_bias=False, name='block2_sepconv2')(x)
+    #     x = BatchNormalization(name='block2_sepconv2_bn')(x)
 
-        x = MaxPooling2D((3, 3), strides=(2, 2), padding='same', name='block2_pool')(x)
-        x = layers.add([x, residual])
+    #     x = MaxPooling2D((3, 3), strides=(2, 2), padding='same', name='block2_pool')(x)
+    #     x = layers.add([x, residual])
 
-        residual = Conv2D(256, (1, 1), strides=(2, 2),
-                          padding='same', use_bias=False)(x)
-        residual = BatchNormalization()(residual)
+    #     residual = Conv2D(256, (1, 1), strides=(2, 2),
+    #                       padding='same', use_bias=False)(x)
+    #     residual = BatchNormalization()(residual)
 
-        x = Activation('relu', name='block3_sepconv1_act')(x)
-        x = SeparableConv2D(256, (3, 3), padding='same', use_bias=False, name='block3_sepconv1')(x)
-        x = BatchNormalization(name='block3_sepconv1_bn')(x)
-        x = Activation('relu', name='block3_sepconv2_act')(x)
-        x = SeparableConv2D(256, (3, 3), padding='same', use_bias=False, name='block3_sepconv2')(x)
-        x = BatchNormalization(name='block3_sepconv2_bn')(x)
+    #     x = Activation('relu', name='block3_sepconv1_act')(x)
+    #     x = SeparableConv2D(256, (3, 3), padding='same', use_bias=False, name='block3_sepconv1')(x)
+    #     x = BatchNormalization(name='block3_sepconv1_bn')(x)
+    #     x = Activation('relu', name='block3_sepconv2_act')(x)
+    #     x = SeparableConv2D(256, (3, 3), padding='same', use_bias=False, name='block3_sepconv2')(x)
+    #     x = BatchNormalization(name='block3_sepconv2_bn')(x)
 
-        x = MaxPooling2D((3, 3), strides=(2, 2), padding='same', name='block3_pool')(x)
-        x = layers.add([x, residual])
+    #     x = MaxPooling2D((3, 3), strides=(2, 2), padding='same', name='block3_pool')(x)
+    #     x = layers.add([x, residual])
 
-        residual = Conv2D(728, (1, 1), strides=(2, 2),
-                          padding='same', use_bias=False)(x)
-        residual = BatchNormalization()(residual)
+    #     residual = Conv2D(728, (1, 1), strides=(2, 2),
+    #                       padding='same', use_bias=False)(x)
+    #     residual = BatchNormalization()(residual)
 
-        x = Activation('relu', name='block4_sepconv1_act')(x)
-        x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name='block4_sepconv1')(x)
-        x = BatchNormalization(name='block4_sepconv1_bn')(x)
-        x = Activation('relu', name='block4_sepconv2_act')(x)
-        x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name='block4_sepconv2')(x)
-        x = BatchNormalization(name='block4_sepconv2_bn')(x)
+    #     x = Activation('relu', name='block4_sepconv1_act')(x)
+    #     x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name='block4_sepconv1')(x)
+    #     x = BatchNormalization(name='block4_sepconv1_bn')(x)
+    #     x = Activation('relu', name='block4_sepconv2_act')(x)
+    #     x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name='block4_sepconv2')(x)
+    #     x = BatchNormalization(name='block4_sepconv2_bn')(x)
 
-        x = MaxPooling2D((3, 3), strides=(2, 2), padding='same', name='block4_pool')(x)
-        x = layers.add([x, residual])
+    #     x = MaxPooling2D((3, 3), strides=(2, 2), padding='same', name='block4_pool')(x)
+    #     x = layers.add([x, residual])
 
-        i = None
-        for i in range(7):
-            residual = x
-            prefix = 'block' + str(i + 5)
+    #     i = None
+    #     for i in range(7):
+    #         residual = x
+    #         prefix = 'block' + str(i + 5)
 
-            x = Activation('relu', name=prefix + '_sepconv1_act')(x)
-            x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv1')(x)
-            x = BatchNormalization(name=prefix + '_sepconv1_bn')(x)
-            x = Activation('relu', name=prefix + '_sepconv2_act')(x)
-            x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv2')(x)
-            x = BatchNormalization(name=prefix + '_sepconv2_bn')(x)
-            x = Activation('relu', name=prefix + '_sepconv3_act')(x)
-            x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv3')(x)
-            x = BatchNormalization(name=prefix + '_sepconv3_bn')(x)
-            x = layers.add([x, residual])
+    #         x = Activation('relu', name=prefix + '_sepconv1_act')(x)
+    #         x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv1')(x)
+    #         x = BatchNormalization(name=prefix + '_sepconv1_bn')(x)
+    #         x = Activation('relu', name=prefix + '_sepconv2_act')(x)
+    #         x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv2')(x)
+    #         x = BatchNormalization(name=prefix + '_sepconv2_bn')(x)
+    #         x = Activation('relu', name=prefix + '_sepconv3_act')(x)
+    #         x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv3')(x)
+    #         x = BatchNormalization(name=prefix + '_sepconv3_bn')(x)
+    #         x = layers.add([x, residual])
 
-        i += 1
-        prefix = 'block' + str(i + 5)
-        x = Activation('relu', name=prefix + '_sepconv1_act')(x)
-        x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv1')(x)
-        x = BatchNormalization(name=prefix + '_sepconv1_bn')(x)
-        x = Activation('relu', name=prefix + '_sepconv2_act')(x)
-        x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv2')(x)
-        x = BatchNormalization(name=prefix + '_sepconv2_bn')(x)
-        x = Activation('relu', name=prefix + '_sepconv3_act')(x)
-        x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv3')(x)
-        x = BatchNormalization(name=prefix + '_sepconv3_bn')(x)
+    #     i += 1
+    #     prefix = 'block' + str(i + 5)
+    #     x = Activation('relu', name=prefix + '_sepconv1_act')(x)
+    #     x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv1')(x)
+    #     x = BatchNormalization(name=prefix + '_sepconv1_bn')(x)
+    #     x = Activation('relu', name=prefix + '_sepconv2_act')(x)
+    #     x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv2')(x)
+    #     x = BatchNormalization(name=prefix + '_sepconv2_bn')(x)
+    #     x = Activation('relu', name=prefix + '_sepconv3_act')(x)
+    #     x = SeparableConv2D(728, (3, 3), padding='same', use_bias=False, name=prefix + '_sepconv3')(x)
+    #     x = BatchNormalization(name=prefix + '_sepconv3_bn')(x)
 
-        block = x
-        block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(1, 1), stride=[1, 1, 1, 1],
-                               padding='SAME', name='conv')
-        stride = 32
+    #     block = x
+    #     block = conv2d_bn_relu(block, num_kernels=128, kernel_size=(1, 1), stride=[1, 1, 1, 1],
+    #                            padding='SAME', name='conv')
+    #     stride = 32
 
-        with tf.variable_scope('resnet-block-2') as scope:
-            block = upsample2d(block, factor=8, has_bias=True, trainable=True, name='1')
-            stride /= 8
+    #     with tf.variable_scope('resnet-block-2') as scope:
+    #         block = upsample2d(block, factor=8, has_bias=True, trainable=True, name='1')
+    #         stride /= 8
 
-        feature = block
+    #     feature = block
 
-    print ('rgb : scale=%f, stride=%d'%(1./stride, stride))
-    return feature, stride
+    # print ('rgb : scale=%f, stride=%d'%(1./stride, stride))
+    # return feature, stride
+    return None, 8
 
 #------------------------------------------------------------------------------
 def front_feature_net(input):
@@ -524,7 +524,8 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
                                     padding='SAME', name=feature_names[n]+'_max_pool')
 
                 roi_features = flatten(block) # now roi_feture shape is (N, X)  N is the amount of rois
-                #tf.summary.histogram(feature_names[n], roi_features)
+                # when only train rpn, this cannot be added into summary...
+                # tf.summary.histogram(feature_names[n], roi_features)
                 roi_features_list.append(roi_features)
 
             if cfg.USE_SIAMESE_FUSION:  # seperately introduce context info by enlarge the roi
@@ -585,7 +586,8 @@ def fusion_net(feature_list, num_class, out_shape=(8,3)):
                         block = avgpool(block, kernel_size=(2, 2), stride=[1, 2, 2, 1],
                                         padding='SAME', name=feature_names[n]+'_max_pool-ctx')
                         ctx_roi_features = flatten(block)
-                        #tf.summary.histogram(feature_names[n], ctx_roi_features)
+                        # when only train rpn, this cannot be added into summary...
+                        # tf.summary.histogram(feature_names[n], ctx_roi_features)
                         ctx_roi_features_list.append(ctx_roi_features)
         
         if cfg.USE_SIAMESE_FUSION:
@@ -663,8 +665,8 @@ def fuse_loss(scores, deltas, rcnn_labels, rcnn_targets):
 
     rcnn_reg_loss = tf.reduce_mean(tf.reduce_sum(rcnn_smooth_l1, axis=1))
     # remove nans(when there are no any bbox, the tf.reduce_mean will generate nan)
-    rcnn_reg_loss = tf.where(tf.is_nan(rcnn_reg_loss), tf.zeros_like(rcnn_reg_loss), rcnn_reg_loss)
-    rcnn_cls_loss = tf.where(tf.is_nan(rcnn_cls_loss), tf.zeros_like(rcnn_cls_loss), rcnn_cls_loss)
+    #rcnn_reg_loss = tf.where(tf.is_nan(rcnn_reg_loss), tf.zeros_like(rcnn_reg_loss), rcnn_reg_loss)
+    #rcnn_cls_loss = tf.where(tf.is_nan(rcnn_cls_loss), tf.zeros_like(rcnn_cls_loss), rcnn_cls_loss)
 
     return rcnn_cls_loss, rcnn_reg_loss
 
@@ -705,8 +707,8 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
 
     rpn_reg_loss = tf.reduce_mean(tf.reduce_sum(rpn_smooth_l1, axis=1))
     # remove nans
-    rpn_reg_loss = tf.where(tf.is_nan(rpn_reg_loss), tf.zeros_like(rpn_reg_loss), rpn_reg_loss)
-    rpn_cls_loss = tf.where(tf.is_nan(rpn_cls_loss), tf.zeros_like(rpn_cls_loss), rpn_cls_loss)
+    #rpn_reg_loss = tf.where(tf.is_nan(rpn_reg_loss), tf.zeros_like(rpn_reg_loss), rpn_reg_loss)
+    #rpn_cls_loss = tf.where(tf.is_nan(rpn_cls_loss), tf.zeros_like(rpn_cls_loss), rpn_cls_loss)
 
     return rpn_cls_loss, rpn_reg_loss
 
@@ -775,9 +777,6 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
     raw_lidar = tf.placeholder(shape=[None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='raw_lidar')
     point_cloud_rois = tf.placeholder(shape=[None, None, cfg.POINT_AMOUNT_LIMIT, 4], dtype=tf.float32, name='point_cloud_rois')
     voxel_rois = tf.placeholder(shape=[None, None, cfg.VOXEL_ROI_L, cfg.VOXEL_ROI_W, cfg.VOXEL_ROI_H], dtype=tf.float32, name='voxel_rois')
-
-    with tf.variable_scope('remove_empty_anchor'):
-        top_no_empty_inds = remove_empty_anchor(top_view, top_anchors, top_inside_inds)
 
     with tf.variable_scope(top_view_rpn_name):
         # top feature
@@ -991,6 +990,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
 
     return {
+        # for nan loss 
         # for mimic batch size
         # These for feed in cumulative loss
         'top_cls_loss_sum': top_cls_loss_sum,
@@ -1005,7 +1005,6 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
         'top_anchors':top_anchors,
         'top_inside_inds':top_inside_inds,
-        'top_no_empty_inds':top_no_empty_inds,
         'top_view':top_view,
         'front_view':front_view,
         'rgb_images':rgb_images,

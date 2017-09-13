@@ -6,6 +6,7 @@ import utils.batch_loading as ub
 import argparse
 import os
 import sys
+import time
 from utils.training_validation_data_splitter import TrainingValDataSplitter
 from utils.batch_loading import Loading3DOP, KittiLoading
 import net.processing.boxes3d  as box
@@ -15,7 +16,7 @@ from net.rpn_target_op import make_bases
 
 def test_3dop(args):
     # 3dop_proposal should be (N, 8) (7 for pos, 1 for objectness score)
-    with Loading3DOP(object_dir='/data/mxj/kitti/object_3dop', proposals_dir='/data/mxj/kitti/3dop_proposal', queue_size=20, require_shuffle=False, 
+    with Loading3DOP(object_dir='~/data/kitti/object_3dop', proposals_dir='/data/mxj/kitti/3dop_proposal', queue_size=20, require_shuffle=False, 
          is_testset=True) as testset:
       test = mv3d.Tester_3DOP(*testset.get_shape(), log_tag=args.tag)
       data = testset.load()
@@ -31,7 +32,7 @@ def test_3dop(args):
         count += 1
 
 def test_rpn(args):
-  with KittiLoading(object_dir='/data/mxj/kitti/object_3dop', queue_size=50, require_shuffle=False,
+  with KittiLoading(object_dir='~/data/kitti/object_3dop', queue_size=50, require_shuffle=False,
     is_testset=True, use_precal_view=True) as testset:
     os.makedirs(args.target_dir, exist_ok=True)
     test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
@@ -49,7 +50,7 @@ def test_rpn(args):
       count += 1
 
 def test_mv3d(args):
-    with KittiLoading(object_dir='/data/mxj/kitti/object', queue_size=50, require_shuffle=False,
+    with KittiLoading(object_dir='~/data/kitti/object', queue_size=50, require_shuffle=False,
         is_testset=True, use_precal_view=True) as testset:
         os.makedirs(args.target_dir, exist_ok=True)
         test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
@@ -68,7 +69,7 @@ def test_mv3d(args):
             count += 1
 
 def test_single_mv3d(args):
-    with KittiLoading(object_dir='/data/mxj/kitti/object', queue_size=1, require_shuffle=False,
+    with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=1, require_shuffle=False,
         is_testset=False, use_precal_view=True) as testset:
         test = mv3d.Predictor_for_test(*testset.get_shape(), log_tag=args.tag)
         while True:
@@ -103,7 +104,7 @@ def test_rpn_target_interact(args):
     #     [-12, -0.5, 27, 15.5]
     # ])
 
-    with KittiLoading(object_dir='/data/mxj/kitti/object', queue_size=1, require_shuffle=False,
+    with KittiLoading(object_dir='~/data/kitti/object', queue_size=1, require_shuffle=False,
         is_testset=False, use_precal_view=True) as testset:
         test = mv3d.Tester_RPN_Target(*testset.get_shape(), log_tag=args.tag)
         while True:
@@ -137,7 +138,7 @@ def test_rpn_target(args):
     #     [-12, -0.5, 27, 15.5]
     # ])
 
-    with KittiLoading(object_dir='/data/mxj/kitti/object', queue_size=1, require_shuffle=False,
+    with KittiLoading(object_dir='~/data/kitti/object', queue_size=1, require_shuffle=False,
         is_testset=False, use_precal_view=True) as testset:
         test = mv3d.Tester_RPN_Target(*testset.get_shape(), log_tag=args.tag)
         res = []
@@ -434,15 +435,29 @@ def lidar_to_top_fast(lidar):
 
     return top
 
-def test_fast_lidar():
-  raw = np.fromfile('/data/mxj/kitti/object/training/velodyne/000000.bin', dtype=np.float32).reshape((-1, 4))
+def test_lidar_fast():
+  #raw = np.fromfile('/data/mxj/kitti/object/training/velodyne/000000.bin', dtype=np.float32).reshape((-1, 4))
+  raw = np.fromfile('/home/maxiaojian/data/kitti/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/0000000000.bin', dtype=np.float32).reshape((-1, 4))
+  t = time.time()
   lidar_to_top_fast(raw)
+  t = time.time() - t
+  print('Costs:{}s'.format(t))
+  t = time.time()
+  lidar_to_front_fast(raw)
+  t = time.time() - t
+  print('Costs:{}s'.format(t))
 
 def test_lidar():
-  raw = np.fromfile('/data/mxj/kitti/object/training/velodyne/000000.bin', dtype=np.float32).reshape((-1, 4))
-  #lidar_to_front(raw)
+  # raw = np.fromfile('/data/mxj/kitti/object/training/velodyne/000000.bin', dtype=np.float32).reshape((-1, 4))
+  raw = np.fromfile('/home/maxiaojian/data/kitti/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/0000000000.bin', dtype=np.float32).reshape((-1, 4))
+  t = time.time() 
   lidar_to_top(raw)
-
+  t = time.time() - t
+  print('Costs:{}s'.format(t))
+  t = time.time()
+  lidar_to_front(raw)
+  t = time.time() - t
+  print('Costs:{}s'.format(t))
 
 
 if __name__ == '__main__':
@@ -464,8 +479,8 @@ if __name__ == '__main__':
     # test_lidar_fast()
     # test_lidar()
     # test_mv3d(args)
-    # test_single_mv3d(args)
-    if args.interactive:
-        test_rpn_target_interact(args)
-    else:
-        test_rpn_target(args)
+    test_single_mv3d(args)
+    # if args.interactive:
+    #     test_rpn_target_interact(args)
+    # else:
+    #     test_rpn_target(args)
