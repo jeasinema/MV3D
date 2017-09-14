@@ -6,7 +6,7 @@ import glob
 from sklearn.utils import shuffle
 from utils.check_data import check_preprocessed_data, get_file_names
 import net.processing.boxes3d  as box
-from multiprocessing import Process,Queue as Queue, Value,Array, cpu_count
+from multiprocessing import Lock, Process,Queue as Queue, Value,Array, cpu_count
 import queue
 import time
 
@@ -29,6 +29,7 @@ import threading
 import scipy.io 
 from net.processing.boxes3d import *
 import math
+import random
 
 
 # disable print
@@ -279,6 +280,7 @@ class batch_loading:
         keep = np.zeros((len(train_gt_labels)), dtype=bool)
 
         for i in range(len(train_gt_labels)):
+            # DontCare object(-1,-1,-1) are dropped in this step
             if box.box3d_in_top_view(train_gt_boxes3d[i]):
                 keep[i] = 1
 
@@ -449,8 +451,6 @@ class BatchLoading2:
                 draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
                 draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
 
-            self.tag_index += 1
-
             # reset self tag_index to 0 and shuffle tag list
             if self.tag_index >= self.size:
                 self.tag_index = 0
@@ -574,7 +574,7 @@ class KittiLoading(object):
         self.queue_size = queue_size
         self.require_shuffle = require_shuffle
         self.preprocess = data.Preprocess()
-        self.dataset_queue = Queue()  # using the queue provided by multiprocessing module
+        self.dataset_queue = Queue()  # must use the queue provided by multiprocessing module(only this can be shared)
 
         self.load_index = 0
         self.fill_queue(self.queue_size)
@@ -901,7 +901,7 @@ class BatchLoading3:
         self.cache_size = queue_size
         self.loader_need_exit = Value('i', 0)
 
-        self.prepr_data=Queue()
+        self.prepr_data=Queue()  # must use multiprocessing.Queue for sharing data
         if self.use_multi_process_num > 0:
             self.loader_processing = [Process(target=self.loader) for i in range(self.use_multi_process_num)]
         else:
@@ -980,6 +980,7 @@ class BatchLoading3:
         # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
         skip_frames = True
         batch_rgb, batch_top, batch_fronts, batch_labels, batch_boxes3d, batch_frame_tag = [], [], [], [], [], []
+        self.tags = shuffle(self.tags, random_state=random.randint(0, self.use_multi_process_num**5))
         for _ in range(self.batch_size):
             while skip_frames:
                 # fronts = []
@@ -990,7 +991,7 @@ class BatchLoading3:
                     draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
                     draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
 
-                self.tag_index += 1
+                self.tag_index = self.tag_index + 1
 
                 # reset self tag_index to 0 and shuffle tag list
                 # nice job, so just training for more interation

@@ -790,7 +790,7 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    w1, w2 = 1.0, 1.0
+                    w1, w2 = 1.0, 0.5
                     self.targets_loss = w1 * self.top_cls_loss + w2 * self.top_reg_loss
                     self.targets_loss_cur = w1 * self.top_cls_loss_cur + w2 * self.top_reg_loss_cur
 
@@ -997,6 +997,7 @@ class Trainer(MV3D):
             self.log_msg.write('-------------------------------------------------------------------------------------\n')
 
             init_step = self.n_global_step
+
             try:
                 for iter in range(init_step, init_step+max_iter):
                     self.log_msg.write('Current iterations/Total iterations: {}/{}\n'.format(iter, init_step+max_iter))
@@ -1037,6 +1038,11 @@ class Trainer(MV3D):
                     self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
                     self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
                          data_set.load()
+                    # gt labels are all the object in the labels file, 1 for "Car, Van, Tram..", 0 for others
+
+                    # skip empty data 
+                    if len(self.batch_gt_labels[0][self.batch_gt_labels[0] == 1]) <= 0:
+                        continue 
 
                     # fit_iterate log init
                     if log_this_iter:
@@ -1137,13 +1143,15 @@ class Trainer(MV3D):
         # ATTENTION: Although here we just cal the "raw" anchor's delta with gt, but in MV3d_net, 
         # when we use batch_top_labels and batch_top_target to cal the rpn loss, we also use delta cal by RPN(which is not exported).
         # self.top_view_anchors are generated offline by make_anchors, but its amount(50*50*9) is the same as delta/score generated in RPN(without nms)
+
         self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
         # skip when no pos gt in rpn 
+        # skip when no pos gt 
         if len(self.batch_top_pos_inds) <= 0:
-            return  0.0, 0.0, 0.0, 0.0
-
+            return 0.0, 0.0, 0.0, 0.0
+      
         # Single RPN mode(Fast)
         if set([mv3d_net.top_view_rpn_name]) == set(self.train_target):
             # only run RPN part
