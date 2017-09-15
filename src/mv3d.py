@@ -591,6 +591,7 @@ class MV3D(object):
             img_gt = draw_rpn_gt(top_image, gt_top_boxes, gt_labels)
             # nud.imsave('img_rpn_gt', img_gt, subdir)
             self.summary_image(img_gt, scope_name + '/img_rpn_gt', step=step)  #just RPN gt
+            # red is with label==1(car, van..), light blue is with label==1(others in label file)
 
         if top_inds is not None:
             img_label = draw_rpn_labels(top_image, self.top_view_anchors, top_inds, top_labels)
@@ -985,8 +986,9 @@ class Trainer(MV3D):
             #FIXME
             validation_step=100 # should be the ratio between the test set size and the val set size(not a strict requirement)
             ckpt_save_step=1000
-            self.iter_debug=500  #FIXME this is log iter(log image)
-            summary_step=200  # this is freq for print loss
+            self.iter_debug=500  #FIXME this is freq for log image
+            summary_step=200  # this is freq for log loss
+            print_loss_freq=1 # this is freq for print loss
 
 
             if cfg.TRAINING_TIMER:
@@ -1012,9 +1014,9 @@ class Trainer(MV3D):
                     # set fit flag
                     if iter % validation_step == 0:  summary_it,is_validation,print_loss = True,True,True # summary validation loss
                     if (iter+1) % validation_step == 0:  summary_it,print_loss = True,True # summary train loss
-                    if iter % 20 == 0: print_loss = True #print train loss
+                    if iter % print_loss_freq == 0: print_loss = True #print train loss
 
-                    if 1 and  iter%summary_step == 0: summary_it,summary_runmeta = True,True
+                    if iter%summary_step == 0: summary_it,summary_runmeta = True,True
 
                     if iter % self.iter_debug == 0 or (iter + 1) % self.iter_debug == 0:
                         log_this_iter = True
@@ -1067,6 +1069,9 @@ class Trainer(MV3D):
                     if sum(np.isnan([t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss])) > 0:
                         print('have nan loss!')
                         assert(0)
+                    if t_cls_loss == t_reg_loss == f_cls_loss == f_reg_loss == 0:
+                        print('{} is empty!'.format(self.frame_id))
+                        continue
 
                     if print_loss:
                         self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
@@ -1123,9 +1128,10 @@ class Trainer(MV3D):
 
 
         self.batch_gt_top_boxes = data.box3d_to_top_box(batch_gt_boxes3d[0])
-
         # for remove empty anchors
+        # input: top_view_anchors (N, 4) 4->(y1, x1, y2, x2) (x > y)
         self.anchors_inside_inds = remove_empty_anchor(batch_top_view[0], self.top_view_anchors, cfg.REMOVE_THRES)  # only support batch size  == 1
+
         # too slow..deprecated
         # fd0 = {
         #     net['top_view']: batch_top_view,
@@ -1148,7 +1154,6 @@ class Trainer(MV3D):
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
         # skip when no pos gt in rpn 
-        # skip when no pos gt 
         if len(self.batch_top_pos_inds) <= 0:
             return 0.0, 0.0, 0.0, 0.0
       

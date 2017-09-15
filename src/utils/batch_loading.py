@@ -30,7 +30,7 @@ import scipy.io
 from net.processing.boxes3d import *
 import math
 import random
-
+import sys
 
 # disable print
 # import sys
@@ -955,6 +955,7 @@ class BatchLoading3:
 
 
     def preprocess_one_frame(self, rgb, lidar, obstacles, tag):
+        # attention: since we are training, there is no need to remove the other objects
         rgb = self.preprocess.rgb(rgb)
         if self.use_precal_view:
             top = np.load(os.path.join(cfg.RAW_DATA_SETS_DIR, 'top_view', tag + '.npy'))

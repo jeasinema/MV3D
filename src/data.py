@@ -37,7 +37,8 @@ class Preprocess(object):
 
     def label(self, obj):
         label=0
-        if obj.type=='Van' or obj.type=='Truck' or obj.type=='Car' or obj.type=='Tram':# todo : only  support 'Van'
+        #if obj.type=='Van' or obj.type=='Truck' or obj.type=='Car' or obj.type=='Tram':# todo : only  support 'Van'
+        if obj.type in config.cfg.DETECT_OBJ: 
             label = 1
         return label
 

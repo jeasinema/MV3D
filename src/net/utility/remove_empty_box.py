@@ -25,7 +25,7 @@ def get_gpu_info():
 
 def remove_empty_anchor(view, anchors, limit):
     # input:
-    # ahchors: (N, 4) (x1, y1, x2, y2)
+    # ahchors: (N, 4) 4->(y1, x1, y2, x2) (x > y)
     # view: (W, H, C) 
 
     mod = cuda.module_from_buffer(module_buff)
