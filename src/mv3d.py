@@ -165,6 +165,8 @@ class MV3D(object):
 
     def __init__(self, top_shape, front_shape, rgb_shape, debug_mode=False, log_tag=None, weigths_dir=None):
 
+        import pycuda.autoinit  # init for each process/thread
+
         print('fuck 0.0!')
         # anchors
         self.top_rpn_stride=None
@@ -591,6 +593,7 @@ class MV3D(object):
             img_gt = draw_rpn_gt(top_image, gt_top_boxes, gt_labels)
             # nud.imsave('img_rpn_gt', img_gt, subdir)
             self.summary_image(img_gt, scope_name + '/img_rpn_gt', step=step)  #just RPN gt
+            # red is with label==1(car, van..), light blue is with label==1(others in label file)
 
         if top_inds is not None:
             img_label = draw_rpn_labels(top_image, self.top_view_anchors, top_inds, top_labels)
@@ -985,8 +988,9 @@ class Trainer(MV3D):
             #FIXME
             validation_step=100 # should be the ratio between the test set size and the val set size(not a strict requirement)
             ckpt_save_step=1000
-            self.iter_debug=500  #FIXME this is log iter(log image)
-            summary_step=200  # this is freq for print loss
+            self.iter_debug=500  #FIXME this is freq for log image
+            summary_step=200  # this is freq for log loss
+            print_loss_freq=1 # this is freq for print loss
 
 
             if cfg.TRAINING_TIMER:
@@ -997,6 +1001,7 @@ class Trainer(MV3D):
             self.log_msg.write('-------------------------------------------------------------------------------------\n')
 
             init_step = self.n_global_step
+
             try:
                 for iter in range(init_step, init_step+max_iter):
                     self.log_msg.write('Current iterations/Total iterations: {}/{}\n'.format(iter, init_step+max_iter))
@@ -1011,9 +1016,9 @@ class Trainer(MV3D):
                     # set fit flag
                     if iter % validation_step == 0:  summary_it,is_validation,print_loss = True,True,True # summary validation loss
                     if (iter+1) % validation_step == 0:  summary_it,print_loss = True,True # summary train loss
-                    if iter % 20 == 0: print_loss = True #print train loss
+                    if iter % print_loss_freq == 0: print_loss = True #print train loss
 
-                    if 1 and  iter%summary_step == 0: summary_it,summary_runmeta = True,True
+                    if iter%summary_step == 0: summary_it,summary_runmeta = True,True
 
                     if iter % self.iter_debug == 0 or (iter + 1) % self.iter_debug == 0:
                         log_this_iter = True
@@ -1037,6 +1042,11 @@ class Trainer(MV3D):
                     self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
                     self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
                          data_set.load()
+                    # gt labels are all the object in the labels file, 1 for "Car, Van, Tram..", 0 for others
+
+                    # skip empty data 
+                    if len(self.batch_gt_labels[0][self.batch_gt_labels[0] == 1]) <= 0:
+                        continue 
 
                     # fit_iterate log init
                     if log_this_iter:
@@ -1061,6 +1071,9 @@ class Trainer(MV3D):
                     if sum(np.isnan([t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss])) > 0:
                         print('have nan loss!')
                         assert(0)
+                    if t_cls_loss == t_reg_loss == f_cls_loss == f_reg_loss == 0:
+                        print('{} is empty!'.format(self.frame_id))
+                        continue
 
                     if print_loss:
                         self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
@@ -1117,9 +1130,10 @@ class Trainer(MV3D):
 
 
         self.batch_gt_top_boxes = data.box3d_to_top_box(batch_gt_boxes3d[0])
-
         # for remove empty anchors
+        # input: top_view_anchors (N, 4) 4->(y1, x1, y2, x2) (x > y)
         self.anchors_inside_inds = remove_empty_anchor(batch_top_view[0], self.top_view_anchors, cfg.REMOVE_THRES)  # only support batch size  == 1
+
         # too slow..deprecated
         # fd0 = {
         #     net['top_view']: batch_top_view,
@@ -1137,13 +1151,14 @@ class Trainer(MV3D):
         # ATTENTION: Although here we just cal the "raw" anchor's delta with gt, but in MV3d_net, 
         # when we use batch_top_labels and batch_top_target to cal the rpn loss, we also use delta cal by RPN(which is not exported).
         # self.top_view_anchors are generated offline by make_anchors, but its amount(50*50*9) is the same as delta/score generated in RPN(without nms)
+
         self.batch_top_inds, self.batch_top_pos_inds, self.batch_top_labels, self.batch_top_targets = \
             rpn_target(self.top_view_anchors, self.anchors_inside_inds, batch_gt_labels[0],
                        self.batch_gt_top_boxes)
         # skip when no pos gt in rpn 
         if len(self.batch_top_pos_inds) <= 0:
-            return  0.0, 0.0, 0.0, 0.0
-
+            return 0.0, 0.0, 0.0, 0.0
+      
         # Single RPN mode(Fast)
         if set([mv3d_net.top_view_rpn_name]) == set(self.train_target):
             # only run RPN part
@@ -1162,8 +1177,8 @@ class Trainer(MV3D):
             }
             # it seems that we have to do it first..., if just pass this step, the gradient will miss
             # attention: this step include rpn stage NMS, and applied the delta to proposals
-            self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
-                sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
+            # self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
+            #    sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
             # in fact, the model will be repeatedly cal under this manner
             fd2 = {
                 **fd1,

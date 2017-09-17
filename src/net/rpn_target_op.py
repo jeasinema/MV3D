@@ -135,6 +135,9 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
              labels: pos_neg_inds's labels
              targets:  positive samples's bias to ground truth (top view bounding box regression targets)
     """
+    # remove box which label is not 1
+    gt_boxes = gt_boxes[gt_labels == 1]
+
     inside_anchors = anchors[inside_inds, :]
 
     # label: 1 is positive, 0 is negative, -1 is dont care
@@ -150,14 +153,18 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
     max_overlaps       = overlaps[np.arange(len(inside_inds)), argmax_overlaps]
     gt_argmax_overlaps = overlaps.argmax(axis=0)
     gt_max_overlaps    = overlaps[gt_argmax_overlaps, np.arange(overlaps.shape[1])]
-    # remove zero overlaps
+    # remove zero overlaps  -> origin version do not do that, so the rpn loss always cannot generate nans
     tmp = []
+    gt_argmax_overlaps = np.array([])
     for ele in gt_max_overlaps:
         if ele != 0:
             tmp.append(ele)
+            gt_argmax_overlaps = np.hstack([
+                gt_argmax_overlaps, 
+                np.where(overlaps == ele)[0]
+            ])
     gt_max_overlaps = np.array(tmp)
-
-    gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]  # find element match gt_max_overlaps[0/1] in overlaps[:, 0/1] respectively
+    gt_argmax_overlaps = gt_argmax_overlaps.astype(np.int32)
 
     labels[max_overlaps <  CFG.TRAIN.RPN_BG_THRESH_HI] = 0   # bg label
     labels[gt_argmax_overlaps] = 1                           # fg label: for each gt, anchor with highest overlap

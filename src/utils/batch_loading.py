@@ -6,7 +6,7 @@ import glob
 from sklearn.utils import shuffle
 from utils.check_data import check_preprocessed_data, get_file_names
 import net.processing.boxes3d  as box
-from multiprocessing import Process,Queue as Queue, Value,Array, cpu_count
+from multiprocessing import Lock, Process,Queue as Queue, Value,Array, cpu_count
 import queue
 import time
 
@@ -29,7 +29,10 @@ import threading
 import scipy.io 
 from net.processing.boxes3d import *
 import math
+import random
+import sys
 
+from net.utility.front_top_preprocess import lidar_to_top_cuda, lidar_to_front_cuda
 
 # disable print
 # import sys
@@ -107,7 +110,7 @@ class batch_loading:
 
     def preprocess(self, rgb, lidar, obstacles):
         rgb = preprocess.rgb(rgb)
-        top = preprocess.lidar_to_top(lidar)
+        top = lidar_to_top_cuda(lidar)
         boxes3d = [preprocess.bbox3d(obs) for obs in obstacles]
         labels = [preprocess.label(obs) for obs in obstacles]
         return rgb, top, boxes3d, labels
@@ -279,6 +282,7 @@ class batch_loading:
         keep = np.zeros((len(train_gt_labels)), dtype=bool)
 
         for i in range(len(train_gt_labels)):
+            # DontCare object(-1,-1,-1) are dropped in this step
             if box.box3d_in_top_view(train_gt_boxes3d[i]):
                 keep[i] = 1
 
@@ -420,8 +424,8 @@ class BatchLoading2:
 
     def preprocess_one_frame(self, rgb, lidar, obstacles):
         rgb = self.preprocess.rgb(rgb)
-        top = self.preprocess.lidar_to_top(lidar)
-        front = self.preprocess.lidar_to_front_fast(lidar)
+        top = lidar_to_top_cuda(lidar)
+        front = lidar_to_front_cuda(lidar)
 
         if self.is_testset:
             return rgb, top, None, None
@@ -448,8 +452,6 @@ class BatchLoading2:
             if self.require_log and not self.is_testset:
                 draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
                 draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
-
-            self.tag_index += 1
 
             # reset self tag_index to 0 and shuffle tag list
             if self.tag_index >= self.size:
@@ -574,7 +576,7 @@ class KittiLoading(object):
         self.queue_size = queue_size
         self.require_shuffle = require_shuffle
         self.preprocess = data.Preprocess()
-        self.dataset_queue = Queue()  # using the queue provided by multiprocessing module
+        self.dataset_queue = Queue()  # must use the queue provided by multiprocessing module(only this can be shared)
 
         self.load_index = 0
         self.fill_queue(self.queue_size)
@@ -630,15 +632,15 @@ class KittiLoading(object):
                     try:
                         top_view = np.load(self.f_top[self.load_index])
                     except:
-                        top_view = self.preprocess.lidar_to_top(raw_lidar)
+                        top_view = lidar_to_top_cuda(raw_lidar)
                     try:
                         front_view = np.load(self.f_front[self.load_index])
                     except:
-                        front_view = self.preprocess.lidar_to_front_fast(raw_lidar)
+                        front_view = lidar_to_front_cuda(raw_lidar)
                 else: 
-                    top_view = self.preprocess.lidar_to_top(raw_lidar)
+                    top_view = lidar_to_top_cuda(raw_lidar)
                 # top_view = np.ones((400, 400, 10), dtype=np.float32)
-                    front_view = self.preprocess.lidar_to_front_fast(raw_lidar)
+                    front_view = lidar_to_front_cuda(raw_lidar)
                 # front_view = np.ones((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3), dtype=np.float32)
                 labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
                 tag = self.data_tag[self.load_index]
@@ -705,9 +707,9 @@ class KittiLoading(object):
             top_view = np.load(self.f_top[index])
             front_view = np.load(self.f_front[index])
         else: 
-            top_view = self.preprocess.lidar_to_top(raw_lidar)
+            top_view = lidar_to_top_cuda(raw_lidar)
         # top_view = np.ones((400, 400, 10), dtype=np.float32)
-            front_view = self.preprocess.lidar_to_front_fast(raw_lidar)
+            front_view = lidar_to_front_cuda(raw_lidar)
         # front_view = np.ones((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3), dtype=np.float32)
         labels = [line for line in open(self.f_label[index], 'r').readlines()]
         tag = self.data_tag[index]
@@ -835,8 +837,8 @@ class Loading3DOP(object):
                 #self.rgb_queue.put(cv2.imread(self.f_rgb[self.load_index]))
 
                 raw_lidar = np.fromfile(self.f_lidar[self.load_index], dtype=np.float32).reshape((-1, 4))
-                self.top_view_queue.put(self.preprocess.lidar_to_top(raw_lidar))
-                self.front_view_queue.put(self.preprocess.lidar_to_front_fast(raw_lidar))
+                self.top_view_queue.put(lidar_to_top_cuda(raw_lidar))
+                self.front_view_queue.put(lidar_to_front_cuda(raw_lidar))
 
                 if not self.is_testset:
                     labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
@@ -901,7 +903,7 @@ class BatchLoading3:
         self.cache_size = queue_size
         self.loader_need_exit = Value('i', 0)
 
-        self.prepr_data=Queue()
+        self.prepr_data = Queue() # must use multiprocessing.Queue for sharing data
         if self.use_multi_process_num > 0:
             self.loader_processing = [Process(target=self.loader) for i in range(self.use_multi_process_num)]
         else:
@@ -955,13 +957,14 @@ class BatchLoading3:
 
 
     def preprocess_one_frame(self, rgb, lidar, obstacles, tag):
+        # attention: since we are training, there is no need to remove the other objects
         rgb = self.preprocess.rgb(rgb)
         if self.use_precal_view:
             top = np.load(os.path.join(cfg.RAW_DATA_SETS_DIR, 'top_view', tag + '.npy'))
             front = np.load(os.path.join(cfg.RAW_DATA_SETS_DIR, 'front_view', tag + '.npy'))
         else:
-            top = self.preprocess.lidar_to_top(lidar)
-            front = self.preprocess.lidar_to_front_fast(lidar)
+            top = lidar_to_top_cuda(lidar)
+            front = lidar_to_front_cuda(lidar)
         if self.is_testset:
             return rgb, top, None, None
         boxes3d = [self.preprocess.bbox3d(obs) for obs in obstacles]
@@ -990,17 +993,18 @@ class BatchLoading3:
                     draw_bbox_on_rgb(rgb, boxes3d, frame_tag)
                     draw_bbox_on_lidar_top(top, boxes3d, frame_tag)
 
-                self.tag_index += 1
+                self.tag_index = self.tag_index + 1
 
                 # reset self tag_index to 0 and shuffle tag list
                 # nice job, so just training for more interation
                 if self.tag_index >= self.size:
                     self.tag_index = 0
                     if self.shuffled:
-                        self.tags = shuffle(self.tags)
+                        self.tags = shuffle(self.tags, random_state=random.randint(0, self.use_multi_process_num**5))
                 skip_frames = False
 
                 # only feed in frames with ground truth labels and bboxes during training, or the training nets will break.
+
                 if not self.is_testset:
                     is_gt_inside_range, batch_gt_labels_in_range, batch_gt_boxes3d_in_range = \
                         self.keep_gt_inside_range(labels, boxes3d)
@@ -1032,22 +1036,26 @@ class BatchLoading3:
 
 
     def loader(self):
+        # can only import at a process/thread
+        import pycuda.autoinit 
         if True:
+            self.tags = shuffle(self.tags, random_state=random.randint(0, self.use_multi_process_num**5))
             while self.loader_need_exit.value == 0:
-
                 #if len(self.prepr_data) >=self.cache_size:
                 if self.prepr_data.qsize() >= self.cache_size:
-                    time.sleep(1)
+                    time.sleep(1)  # critic val 
+                    #print('size {}'.format(self.prepr_data.qsize()))
                 #    # print('sleep ')
                 else:
                 #self.prepr_data = [(self.data_preprocessed())]+self.prepr_data
                     self.prepr_data.put((self.data_preprocessed()))
-                    # print('data_preprocessed')
+                    #print('size {}'.format(self.prepr_data.qsize()))
+                    #print('data_preprocessed')
         else:
             while self.loader_need_exit.value == 0:
                 empty_idx = self.find_empty_block()
                 if empty_idx == -1:
-                    time.sleep(1)
+                    time.sleep(1)  # critic val for multi-process training 
                     # print('sleep ')
                 else:
                     prepr_data = (self.data_preprocessed())
@@ -1069,11 +1077,16 @@ class BatchLoading3:
     def load(self):
         if True:
             #while len(self.prepr_data)==0:
-            while self.prepr_data.qsize() ==0:
-                time.sleep(1)
-            #data_ori = self.prepr_data.pop()
-            data_ori = self.prepr_data.get()
-
+            data_ori = None 
+            while data_ori == None:
+                try:
+                    data_ori = self.prepr_data.get(False)
+                except:
+                    pass 
+            #while self.prepr_data.qsize() == 0:
+                # print('data queue is empty!')
+                #time.sleep(1)
+            #data_ori = self.prepr_data.get()
         else:
 
             # print('self.preproc_data_queue.qsize() = ', self.preproc_data_queue.qsize())
