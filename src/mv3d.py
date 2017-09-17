@@ -165,6 +165,8 @@ class MV3D(object):
 
     def __init__(self, top_shape, front_shape, rgb_shape, debug_mode=False, log_tag=None, weigths_dir=None):
 
+        import pycuda.autoinit  # init for each process/thread
+
         print('fuck 0.0!')
         # anchors
         self.top_rpn_stride=None
@@ -791,7 +793,7 @@ class Trainer(MV3D):
 
                 # set loss
                 if set([mv3d_net.top_view_rpn_name]) == set(train_targets):
-                    w1, w2 = 1.0, 0.5
+                    w1, w2 = 1.0, 0.05
                     self.targets_loss = w1 * self.top_cls_loss + w2 * self.top_reg_loss
                     self.targets_loss_cur = w1 * self.top_cls_loss_cur + w2 * self.top_reg_loss_cur
 
@@ -1175,8 +1177,8 @@ class Trainer(MV3D):
             }
             # it seems that we have to do it first..., if just pass this step, the gradient will miss
             # attention: this step include rpn stage NMS, and applied the delta to proposals
-            self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
-                sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
+            # self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
+            #    sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
             # in fact, the model will be repeatedly cal under this manner
             fd2 = {
                 **fd1,

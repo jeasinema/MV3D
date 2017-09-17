@@ -127,8 +127,8 @@ if __name__ == '__main__':
     #with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
         #with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,
     #                      queue_size=1, require_shuffle=True) as validation:
-    with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=True, queue_size=1, use_multi_process_num=0) as training:
-      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=1, use_multi_process_num=0) as validation:
+    with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=False, queue_size=1000, use_multi_process_num=4) as training:
+      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=False, queue_size=30, use_multi_process_num=1) as validation:
             train = mv3d.Trainer(train_set=training, validation_set=validation,
                                  pre_trained_weights=weights, train_targets=targets, log_tag=tag,
                                  continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)

@@ -325,14 +325,14 @@ def lidar_to_top(lidar):
             ix  = np.where(quantized[:,0]==x)
             quantized_x = quantized[ix]
             if len(quantized_x) == 0 : continue
-            yy = -x
+            yy = -x - 1
 
             for y in range(Yn):
                 iy  = np.where(quantized_x[:,1]==y)
                 quantized_xy = quantized_x[iy]
                 count = len(quantized_xy)
                 if  count==0 : continue
-                xx = -y
+                xx = -y - 1
 
                 top[yy,xx,Zn+1] = min(1, np.log(count+1)/math.log(32))
                 max_height_point = np.argmax(quantized_xy[:,2])

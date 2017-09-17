@@ -2,7 +2,6 @@ from __future__ import print_function
 from __future__ import absolute_import 
 from __future__ import division
 import pycuda.driver as cuda 
-import pycuda.autoinit 
 import numpy as np
 from config import cfg
 import os
@@ -42,6 +41,7 @@ def remove_empty_anchor(view, anchors, limit):
         cuda.In(view_shape), 
         block=(int(view_shape[2]), 1, 1),  # a thread <-> a value in a specific 2d pos(need to sum the channel)
         grid=(int(anchors_shape[0]), 50, 1)  # a grid <-> an anchor and a line(x)
+        # 50 must > anchors width
     )
     index = np.sum(index, axis=1)
     return np.where(index > limit)[0]
@@ -50,6 +50,7 @@ if __name__ == '__main__':
     import time
     import random
     import numpy as np
+    import pycuda.autoinit
     a = 120000
     anchors = np.hstack([
         0*np.ones((a,1)),

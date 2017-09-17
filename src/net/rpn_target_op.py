@@ -155,7 +155,7 @@ def rpn_target( anchors, inside_inds, gt_labels,  gt_boxes):
     gt_max_overlaps    = overlaps[gt_argmax_overlaps, np.arange(overlaps.shape[1])]
     # remove zero overlaps  -> origin version do not do that, so the rpn loss always cannot generate nans
     tmp = []
-    gt_argmax_overlaps = []
+    gt_argmax_overlaps = np.array([])
     for ele in gt_max_overlaps:
         if ele != 0:
             tmp.append(ele)
