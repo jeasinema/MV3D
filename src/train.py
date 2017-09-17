@@ -27,7 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--tag', type=str, nargs='?', default='unknown_tag',
                         help='set log tag')
 
-    parser.add_argument('-c', '--continue_train', action='store_true', default=False,
+    parser.add_argument('-c', '--clear-progress', action='store_true', default=False,
                         help='set continue train flag')
 
     parser.add_argument('-b', '--batch-size', type=int, nargs='?', default=1,
@@ -131,5 +131,5 @@ if __name__ == '__main__':
       with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=True, queue_size=30, use_multi_process_num=1) as validation:
             train = mv3d.Trainer(train_set=training, validation_set=validation,
                                  pre_trained_weights=weights, train_targets=targets, log_tag=tag,
-                                 continue_train = args.continue_train, batch_size=args.batch_size, lr=args.lr)
+                                 continue_train = not args.clear_progress, batch_size=args.batch_size, lr=args.lr)
             train(max_iter=max_iter) 
