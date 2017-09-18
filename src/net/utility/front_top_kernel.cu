@@ -1,4 +1,5 @@
 #include "cuda.h"
+#include "math_functions.h"
 
 __global__ void lidar_to_top(float *top, int *top_shape, int *lidar_x, 
     int *lidar_y, float *lidar_z, float *lidar_i, int *lidar_shape)
@@ -63,6 +64,32 @@ __global__ void lidar_to_top_density(float *top_density, int *lidar_x, int *lida
     }
 }
 
-__global__ void lidar_to_front(float *front, int *front_shape, float *lidar, int *lidar_shape)
+__global__ void lidar_to_front_add_points(int *weight_mask, int *points, int *weight_mask_shape, int *points_shape)
 {
+    int point_amount = points_shape[0];
+    int point_width = points_shape[1];
+    int width = weight_mask_shape[1];
+    for (int i = 0; i < point_amount; ++i) {
+        int point_index = point_width*i;
+        int x = points[point_index];
+        int y = points[point_index+1];
+        int mask_index = x*width + y;
+        weight_mask[mask_index] ++;
+    }
+}
+
+__global__ void lidar_to_front_fill_front(float *front, float *buf, int *front_shape, int *buf_shape)
+{
+    int point_amount = buf_shape[0];
+    int point_width = buf_shape[1];
+    int width = front_shape[1];
+    int channel = front_shape[2];
+    int cur_channel = threadIdx.x;
+    for (int i = 0; i < point_amount; ++i) {
+        int point_index = point_width*i;
+        int x = buf[point_index];
+        int y = buf[point_index+1];
+        int front_index = (x*width + y)*channel + cur_channel;
+        front[front_index] += buf[point_index + cur_channel + 2];  // TODO 
+    }
 }
