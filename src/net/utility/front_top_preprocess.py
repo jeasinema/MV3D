@@ -201,7 +201,7 @@ if __name__ == '__main__':
     
     import pycuda.autoinit
 
-    lidar = np.fromfile('/data/mxj/kitti/object/training/velodyne/007480.bin', dtype=np.float32)
+    lidar = np.fromfile('/home/maxiaojian/data/kitti/object/training/velodyne/007480.bin', dtype=np.float32)
     lidar = lidar.reshape((-1, 4))
     t0 = time.time()
     top = lidar_to_top_cuda(lidar) 
@@ -210,9 +210,15 @@ if __name__ == '__main__':
     top_gt = lidar_to_top(lidar)
     t2 = time.time() 
     print('done top cpu, {}'.format(t2-t1))
+    assert(top.shape == top_gt.shape)
+    assert(np.sum(top[..., 0:25] != top_gt[..., 0:25]) == 0)
+    assert(np.sum(top[..., 26] != top_gt[..., 26]) == 0)
     front = lidar_to_front_cuda(lidar) 
     t3 = time.time()
     print('done front, {}'.format(t3-t2))
     front_gt = pro.lidar_to_front_fast(lidar)
     t4 = time.time() 
     print('done front cpu, {}'.format(t4-t3))
+    assert(front.shape == front_gt.shape)
+    assert(np.sum(front != front_gt) == 0)
+
