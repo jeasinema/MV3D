@@ -16,6 +16,7 @@ from collections import OrderedDict
 import config
 import ctypes
 import math
+import time
 
 if config.cfg.USE_CLIDAR_TO_TOP:
     SharedLib = ctypes.cdll.LoadLibrary('/home/stu/MV3D/src/lidar_data_preprocess/'
@@ -176,7 +177,7 @@ class Preprocess(object):
         np.apply_along_axis(_fill, 1, buf)
         front /= weight_mask[:, :, np.newaxis]
 
-        return front  
+        return front
 
 
 proprocess = Preprocess()

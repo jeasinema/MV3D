@@ -101,21 +101,95 @@ def lidar_to_front_cuda(lidar):
     # lidar: (N, 4) 4->(x,y,z,i) in lidar coordinate
 
     mod = cuda.module_from_buffer(module_buff)
-    func = mod.get_function('_Z14lidar_to_frontPfPiS_S0_')
-    # shape 
-    channel = 3
-    front = np.zeros(shape=(cfg.FRONT_WIDTH, cfg.FRONT_WIDTH, channel), dtype=np.float32)
-    front_shape = np.array(front.shape).astype(np.int32)
-    lidar_shape = np.array(lidar.shape).astype(np.int32)
+    func_add_points = mod.get_function('_Z25lidar_to_front_add_pointsPiS_S_S_')
+    func_fill_front = mod.get_function('_Z25lidar_to_front_fill_frontPfS_PiS0_')
+    def cal_height(points):
+        return np.clip(points[:, 2] + cfg.VELODYNE_HEIGHT, a_min=0, a_max=None).astype(np.float32).reshape((-1, 1))
+    def cal_distance(points):
+        return np.sqrt(np.sum(points**2, axis=1)).astype(np.float32).reshape((-1, 1))
+    def cal_intensity(points):
+        return points[:, 3].astype(np.float32).reshape((-1, 1))
+    def to_front(points):
+        return np.array([
+            np.arctan2(points[:, 1], points[:, 0])/cfg.VELODYNE_ANGULAR_RESOLUTION,
+            np.arctan2(points[:, 2], np.sqrt(points[:, 0]**2 + points[:, 1]**2)) \
+                /cfg.VELODYNE_VERTICAL_RESOLUTION
+        ], dtype=np.int32).T
 
-    func(
-        cuda.InOut(front), 
-        cuda.In(front_shape),
-        cuda.In(lidar), 
-        cuda.In(lidar_shape),
-        block=(channel, 1, 1),  # a thread <-> a channel
-        grid=(int(lidar_shape[0]), 1, 1)  # a grid <-> a point in laser scan 
+    # using the same crop method as top view
+    idx = np.where (lidar[:,0]>TOP_X_MIN)
+    lidar = lidar[idx]
+    idx = np.where (lidar[:,0]<TOP_X_MAX)
+    lidar = lidar[idx]
+
+    idx = np.where (lidar[:,1]>TOP_Y_MIN)
+    lidar = lidar[idx]
+    idx = np.where (lidar[:,1]<TOP_Y_MAX)
+    lidar = lidar[idx]
+
+    idx = np.where (lidar[:,2]>TOP_Z_MIN)
+    lidar = lidar[idx]
+    idx = np.where (lidar[:,2]<TOP_Z_MAX)
+    lidar = lidar[idx]
+
+    points = to_front(lidar)
+    ind = np.where(cfg.FRONT_C_MIN < points[:, 0])
+    points, lidar = points[ind], lidar[ind]
+    ind = np.where(points[:, 0] < cfg.FRONT_C_MAX)
+    points, lidar = points[ind], lidar[ind]
+    ind = np.where(cfg.FRONT_R_MIN < points[:, 1])
+    points, lidar = points[ind], lidar[ind]
+    ind = np.where(points[:, 1] < cfg.FRONT_R_MAX)
+    points, lidar = points[ind], lidar[ind]
+
+    points[:, 0] += int(cfg.FRONT_C_OFFSET)
+    points[:, 1] += int(cfg.FRONT_R_OFFSET)
+    #points //= 2
+
+    ind = np.where(0 <= points[:, 0])
+    points, lidar = points[ind], lidar[ind]
+    ind = np.where(points[:, 0] < cfg.FRONT_WIDTH)
+    points, lidar = points[ind], lidar[ind]
+    ind = np.where(0 <= points[:, 1])
+    points, lidar = points[ind], lidar[ind]
+    ind = np.where(points[:, 1] < cfg.FRONT_HEIGHT)
+    points, lidar = points[ind], lidar[ind]
+
+    # sort for mem friendly 
+    idx = np.lexsort((points[:, 1], points[:, 0]))
+    points = points[idx, :]
+    lidar = lidar[idx, :]
+
+    channel = 3 # height, distance, intencity
+    front = np.zeros((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, channel), dtype=np.float32)
+    weight_mask = np.zeros_like(front[:, :, 0]).astype(np.int32)
+    # def _add(x):
+    #     weight_mask[int(x[0]), int(x[1])] += 1
+    # def _fill(x):
+    #     front[int(x[0]), int(x[1]), :] += x[2:]
+    # np.apply_along_axis(_add, 1, points)
+    buf = np.hstack((points, cal_height(lidar), cal_distance(lidar), cal_intensity(lidar))).astype(np.float32)
+    # np.apply_along_axis(_fill, 1, buf)
+    
+    func_add_points(
+        cuda.InOut(weight_mask),  
+        cuda.In(points),
+        cuda.In(np.array(weight_mask.shape).astype(np.int32)),
+        cuda.In(np.array(points.shape).astype(np.int32)),
+        block=(1, 1, 1), 
+        grid=(1, 1, 1), # points
     )
+    weight_mask[weight_mask == 0] = 1  # 0 and 1 are both 1
+    func_fill_front(
+        cuda.InOut(front),
+        cuda.In(buf),
+        cuda.In(np.array(front.shape).astype(np.int32)),
+        cuda.In(np.array(buf.shape).astype(np.int32)),
+        block=(3, 1, 1), # channel 
+        grid=(1, 1, 1)  # points 
+    )
+
+    front /= weight_mask[:, :, np.newaxis]
     return front
 
 if __name__ == '__main__':
@@ -139,7 +213,6 @@ if __name__ == '__main__':
     front = lidar_to_front_cuda(lidar) 
     t3 = time.time()
     print('done front, {}'.format(t3-t2))
-    front_gt = pro.lidar_to_front(lidar)
+    front_gt = pro.lidar_to_front_fast(lidar)
     t4 = time.time() 
     print('done front cpu, {}'.format(t4-t3))
-    from IPython import embed; embed()
