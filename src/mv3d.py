@@ -577,7 +577,9 @@ class MV3D(object):
 
 
     def log_rpn(self,step=None, scope_name=''):
-
+        top_image = data.draw_top_image(self.batch_top_view[0])
+        self.top_image = self.top_image_padding(top_image)
+                     
         top_image = self.top_image
         subdir = self.log_subdir
         top_inds = self.batch_top_inds
@@ -1031,18 +1033,15 @@ class Trainer(MV3D):
 
                     step_name = 'validation' if is_validation else 'training'
 
-                    # load dataset
-                    # data_buf = np.array([data_set.load() for _ in range(self.batch_size)]) 
-                    # self.batch_rgb_images = data_buf[:, 0]
-                    # self.batch_top_view = data_buf[:, 1]
-                    # self.batch_front_view = data_buf[:, 2]
-                    # self.batch_gt_labels = data_buf[:, 3]
-                    # self.batch_gt_boxes3d = data_buf[:, 4]
-                    # self.frame_id = data_buf[:, 5]
-                    self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
-                    self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
-                         data_set.load()
-                    # gt labels are all the object in the labels file, 1 for "Car, Van, Tram..", 0 for others
+                    # load from raw 
+                    #self.batch_rgb_images, self.batch_top_view, self.batch_front_view, \
+                    #self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id = \
+                    #     data_set.load()
+                    
+                    # load from object 
+                    self.frame_id, _label, self.batch_rgb_images, _, self.batch_top_view, self.batch_front_view = data_set.load()
+                    # cal labels and gt_boxes3d 
+                    self.batch_gt_boxes3d, self.batch_gt_labels = data.kitti_label_to_lidar_box3d(_label[0], 'Car', positive_only=False)
 
                     # skip empty data 
                     if len(self.batch_gt_labels[0][self.batch_gt_labels[0] == 1]) <= 0:
@@ -1063,6 +1062,7 @@ class Trainer(MV3D):
                         do_optimize = True
 
                     # fit
+                    # print(self.frame_id)
                     t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss = \
                         self.fit_iteration(self.batch_rgb_images, self.batch_top_view, self.batch_front_view,
                                            self.batch_gt_labels, self.batch_gt_boxes3d, self.frame_id,
@@ -1192,8 +1192,15 @@ class Trainer(MV3D):
                 run_metadata = None
 
                 if is_validation:
-                    t_cls_loss, t_reg_loss, tb_sum_val = \
-                        sess.run([top_cls_loss_cur, top_reg_loss_cur, self.summ], fd2)
+                    t_cls_loss, t_reg_loss, tb_sum_val, self.batch_proposals, self.batch_proposal_scores, self.batch_top_features, self.top_rpn_heatmap = \
+                        sess.run([
+                            top_cls_loss_cur, 
+                            top_reg_loss_cur, 
+                            self.summ,
+                            net['proposals'], 
+                            net['proposal_scores'], 
+                            net['top_features'], 
+                            net['top_rpn_heatmap']], fd2)
                     self.val_summary_writer.add_summary(tb_sum_val, self.n_global_step)
                     print('added validation summary ')
                 else:
@@ -1202,13 +1209,26 @@ class Trainer(MV3D):
                         run_metadata = tf.RunMetadata()
 
                     if do_optimize:
-                        _, t_cls_loss, t_reg_loss, tb_sum_val = \
-                            sess.run([self.solver_step, top_cls_loss_cur, top_reg_loss_cur,
-                                  self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+                        _, t_cls_loss, t_reg_loss, tb_sum_val, self.batch_proposals, self.batch_proposal_scores, self.batch_top_features, self.top_rpn_heatmap = \
+                            sess.run([
+                                self.solver_step, 
+                                top_cls_loss_cur, 
+                                top_reg_loss_cur,
+                                self.summ, 
+                                net['proposals'], 
+                                net['proposal_scores'], 
+                                net['top_features'],
+                                net['top_rpn_heatmap']], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
                     else:
-                        t_cls_loss, t_reg_loss, tb_sum_val = \
-                            sess.run([top_cls_loss_cur, top_reg_loss_cur,
-                                  self.summ], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
+                        t_cls_loss, t_reg_loss, tb_sum_val, self.batch_proposals, self.batch_proposal_scores, self.batch_top_features, self.top_rpn_heatmap = \
+                            sess.run([
+                                top_cls_loss_cur, 
+                                top_reg_loss_cur,
+                                self.summ,
+                                net['proposals'], 
+                                net['proposal_scores'], 
+                                net['top_features'],
+                                net['top_rpn_heatmap']], feed_dict=fd2, options=run_options, run_metadata=run_metadata)
 
                     self.train_summary_writer.add_summary(tb_sum_val, self.n_global_step)
                     print('added training summary ')
@@ -1219,12 +1239,24 @@ class Trainer(MV3D):
 
             else:
                 if is_validation or not do_optimize:
-                    t_cls_loss, t_reg_loss = \
-                        sess.run([top_cls_loss_cur, top_reg_loss_cur], fd2)
+                    t_cls_loss, t_reg_loss, self.batch_proposals, self.batch_proposal_scores, self.batch_top_features, self.top_rpn_heatmap = \
+                        sess.run([
+                            top_cls_loss_cur, 
+                            top_reg_loss_cur,
+                            net['proposals'], 
+                            net['proposal_scores'], 
+                            net['top_features'],
+                            net['top_rpn_heatmap']], fd2)
                 else:
-                    _, t_cls_loss, t_reg_loss= \
-                        sess.run([self.solver_step, top_cls_loss_cur, top_reg_loss_cur],
-                                 feed_dict=fd2)
+                    _, t_cls_loss, t_reg_loss, self.batch_proposals, self.batch_proposal_scores, self.batch_top_features, self.top_rpn_heatmap = \
+                        sess.run([
+                            self.solver_step, 
+                            top_cls_loss_cur, 
+                            top_reg_loss_cur,
+                            net['proposals'], 
+                            net['proposal_scores'], 
+                            net['top_features'],
+                            net['top_rpn_heatmap']], feed_dict=fd2)
 
             # cumulation/clear
             if do_optimize: # clear
@@ -1234,6 +1266,11 @@ class Trainer(MV3D):
                 self.top_reg_loss_sum += t_reg_loss
                 self.fuse_cls_loss_sum += 0.0
                 self.fuse_reg_loss_sum += 0.0
+
+            if log:
+                step_name = 'validation' if is_validation else  'train'
+                scope_name = '%s_iter_%06d' % (step_name, self.n_global_step - (self.n_global_step % self.iter_debug))
+                self.log_rpn(step=self.n_global_step, scope_name=scope_name)
 
             return t_cls_loss, t_reg_loss, 0.0, 0.0
 
@@ -1253,8 +1290,8 @@ class Trainer(MV3D):
                 K.learning_phase(): 1
             }
             # attention: this step include rpn stage NMS, and applied the delta to proposals
-            self.batch_proposals, self.batch_proposal_scores, self.batch_top_features = \
-                sess.run([net['proposals'], net['proposal_scores'], net['top_features']], fd1)
+            self.batch_proposals, self.batch_proposal_scores, self.batch_top_features, self.top_rpn_heatmap = \
+                sess.run([net['proposals'], net['proposal_scores'], net['top_features'],net['top_rpn_heatmap']], fd1)
 
             if log:
                 step_name = 'validation' if is_validation else  'train'
@@ -1412,6 +1449,12 @@ class Tester_RPN(MV3D):
         self.top_view = top_view
         self.rgb_image = rgb_image
         self.front_view = front_view
+
+        self.batch_gt_top_boxes = data.box3d_to_top_box(self.batch_gt_boxes3d[0])
+
+        print('remove')
+        self.anchors_inside_inds = remove_empty_anchor(self.top_view[0], self.top_view_anchors, cfg.REMOVE_THRES)  # only support batch size  == 1
+        print('done remove')
         fd1 = {
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
@@ -1420,8 +1463,9 @@ class Tester_RPN(MV3D):
             K.learning_phase(): True
         }
 
-        self.batch_proposals, self.batch_proposal_scores = \
-            self.sess.run([self.net['proposals'], self.net['proposal_scores']], fd1)
+        self.batch_proposals, self.batch_proposal_scores, self.top_rpn_heatmap = \
+            self.sess.run([self.net['proposals'], self.net['proposal_scores'], self.net['top_rpn_heatmap']], fd1)
+        print('done run')
         self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
         self.top_rois = self.batch_proposals
         if len(self.top_rois) == 0:
@@ -1432,7 +1476,7 @@ class Tester_RPN(MV3D):
         # In the origin paper, it is 1.45m, in this implementation is -2 and 0.5(2.5m)
         self.front_rois = project_to_front_roi(self.rois3d)
         self.rgb_rois = project_to_rgb_roi(self.rois3d)
-        return self.rois3d, self.rgb_rois, self.top_rois,  self.batch_proposal_scores
+        return self.rois3d, self.rgb_rois, self.top_rois,  self.batch_proposal_scores, self.top_rpn_heatmap
 
     def dump_log(self,log_subdir, n_frame):
         n_start = n_frame - (n_frame % (self.n_max_log_per_scope))

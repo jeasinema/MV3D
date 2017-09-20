@@ -549,25 +549,42 @@ class BatchLoading2:
 # for non-raw dataset
 class KittiLoading(object):
 
-    def __init__(self, object_dir='.', queue_size=20, require_shuffle=False, is_testset=True, batch_size=1, use_precal_view=False):
+    def __init__(self, object_dir='.', queue_size=20, require_shuffle=False, is_testset=True, batch_size=1, use_precal_view=False, use_multi_process_num=0, split_file=''):
         self.object_dir = object_dir
         self.is_testset, self.require_shuffle, self.use_precal_view = is_testset, require_shuffle, use_precal_view
+        self.use_multi_process_num = use_multi_process_num 
         self.batch_size=batch_size
-        
-        self.f_rgb = glob.glob(os.path.join(self.object_dir, 'training', 'image_2', '*.png'))
-        self.f_rgb.sort()
-        self.f_lidar = glob.glob(os.path.join(self.object_dir, 'training', 'velodyne', '*.bin'))
-        self.f_lidar.sort()
-        self.f_top = glob.glob(os.path.join(self.object_dir, 'training', 'top_view', '*.npy'))
-        self.f_top.sort()
-        self.f_front = glob.glob(os.path.join(self.object_dir, 'training', 'front_view', '*.npy'))
-        self.f_front.sort()
-        self.f_label = glob.glob(os.path.join(self.object_dir, 'training', 'label_2', '*.txt'))
-        self.f_label.sort()
+        self.split_file = split_file 
+
+        if self.split_file != '':
+            # use split file  
+            _tag = []
+            self.f_rgb, self.f_lidar, self.f_top, self.f_front, self.f_label = [], [], [], [], []
+            for line in open(self.split_file, 'r').readlines():
+                line = line[:-1] # remove '\n'
+                _tag.append(line)
+                self.f_rgb.append(os.path.join(self.object_dir, 'training', 'image_2', line+'.png'))
+                self.f_lidar.append(os.path.join(self.object_dir, 'training', 'velodyne', line+'.bin'))
+                self.f_top.append(os.path.join(self.object_dir, 'training', 'top_view', line+'.npy'))
+                self.f_front.append(os.path.join(self.object_dir, 'training', 'front_view', line+'.npy'))
+                self.f_label.append(os.path.join(self.object_dir, 'training', 'label_2', line+'.txt'))
+        else:
+            self.f_rgb = glob.glob(os.path.join(self.object_dir, 'training', 'image_2', '*.png'))
+            self.f_rgb.sort()
+            self.f_lidar = glob.glob(os.path.join(self.object_dir, 'training', 'velodyne', '*.bin'))
+            self.f_lidar.sort()
+            self.f_top = glob.glob(os.path.join(self.object_dir, 'training', 'top_view', '*.npy'))
+            self.f_top.sort()
+            self.f_front = glob.glob(os.path.join(self.object_dir, 'training', 'front_view', '*.npy'))
+            self.f_front.sort()
+            self.f_label = glob.glob(os.path.join(self.object_dir, 'training', 'label_2', '*.txt'))
+            self.f_label.sort()
+
         self.data_tag =  [name.split('/')[-1].split('.')[-2] for name in self.f_label]
         assert(len(self.f_rgb) == len(self.f_lidar) == len(self.f_label) == len(self.data_tag))
         self.dataset_size = len(self.f_rgb)
         self.alreay_extract_data = 0
+        self.cur_frame_info = ''
 
         print("Dataset total length: {}".format(len(self.f_rgb)))
         if self.require_shuffle:
@@ -579,22 +596,31 @@ class KittiLoading(object):
         self.dataset_queue = Queue()  # must use the queue provided by multiprocessing module(only this can be shared)
 
         self.load_index = 0
-        self.fill_queue(self.queue_size)
+        if self.use_multi_process_num == 0:
+            self.loader_worker = [threading.Thread(target=self.loader_worker_main)]
+        else:
+            self.loader_worker = [Process(target=self.loader_worker_main) for i in range(self.use_multi_process_num)]
+        self.work_exit = False
+        [i.start() for i in self.loader_worker]
 
         # This operation is not thread-safe
+        #import pycuda.autoinit # must do this after fork child
         try:
-            tmp = self.dataset_queue.queue[0]
+            tmp = self.load_specified()
             self.top_shape = tmp[3].shape
             self.front_shape = tmp[4].shape
             self.rgb_shape = tmp[1].shape
         except:
             # FIXME
+            print('failed')
             self.top_shape = (800, 600, 27)
             self.front_shape = (cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3)
             self.rgb_shape = (cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH, 3)
 
-        #self.loader_worker = threading.Thread(target=self.loader_worker_main)
-        self.loader_worker = [Process(target=self.loader_worker_main) for i in range(cpu_count())]  
+        if self.use_multi_process_num == 0:
+            self.loader_worker = [threading.Thread(target=self.loader_worker_main)]
+        else:
+            self.loader_worker = [Process(target=self.loader_worker_main) for i in range(self.use_multi_process_num)]
         self.work_exit = False
         [i.start() for i in self.loader_worker]
 
@@ -609,20 +635,21 @@ class KittiLoading(object):
 
     def fill_queue(self, max_load_amount=0):
         
-        def to_label(raw_labels):
-            # input: lines of label file
-            # return: [(str, (8, 3))]
-            ret = []
-            for line in raw_labels:
-                data = line.split()
-                obj_class = data[0]
-                # camera coordinate
-                h, w, l, x, y, z, ry = [float(i) for i in data[8:15]]
-                # lidar coordinate
-                # h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry
-                h, w, l, x, y, z, rz = h, w, l, box.camera_to_lidar_coords(x, y, z), -ry-math.pi/2
-                ret.append((obj_class, box3d_compose((x, y, z), (h, w, l), (0, 0, rz))))
-            return ret
+        # no need to do it here
+        # def to_label(raw_labels):
+        #     # input: lines of label file
+        #     # return: [(str, (8, 3))]
+        #     ret = []
+        #     for line in raw_labels:
+        #         data = line.split()
+        #         obj_class = data[0]
+        #         # camera coordinate
+        #         h, w, l, x, y, z, ry = [float(i) for i in data[8:15]]
+        #         # lidar coordinate
+        #         # h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry
+        #         h, w, l, x, y, z, rz = h, w, l, box.camera_to_lidar_coords(x, y, z), -ry-math.pi/2
+        #         ret.append((obj_class, box3d_compose((x, y, z), (h, w, l), (0, 0, rz))))
+        #     return ret
 
         for _ in range(max_load_amount):
             try:
@@ -638,17 +665,20 @@ class KittiLoading(object):
                     except:
                         front_view = lidar_to_front_cuda(raw_lidar)
                 else: 
+                    #print('before cuda')
                     top_view = lidar_to_top_cuda(raw_lidar)
                 # top_view = np.ones((400, 400, 10), dtype=np.float32)
                     front_view = lidar_to_front_cuda(raw_lidar)
+                    #print('after cuda')
                 # front_view = np.ones((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3), dtype=np.float32)
                 labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
                 tag = self.data_tag[self.load_index]
 
                 self.dataset_queue.put_nowait((labels, rgb, raw_lidar, top_view, front_view, tag))
                 self.load_index += 1
-                #print("Fill {}, now size:{}".format(self.load_index, self.dataset_queue.qsize()))
+                # print("Fill {}, now size:{}".format(self.load_index, self.dataset_queue.qsize()))
             except:
+                print('GG')
                 if not self.is_testset:  # test set just end
                     self.load_index = 0
                     if self.require_shuffle:
@@ -676,6 +706,7 @@ class KittiLoading(object):
                 top_view.append(buff[3])
                 front_view.append(buff[4])
                 tag.append(buff[5])
+                self.cur_frame_info = buff[5]
 
                 self.alreay_extract_data += 1
             if self.is_testset:
@@ -735,11 +766,13 @@ class KittiLoading(object):
 
 
     def loader_worker_main(self):
+        import pycuda.autoinit 
         while not self.work_exit:
             if self.dataset_queue.qsize() >= self.queue_size // 2:
                 time.sleep(1)
             else:
                 self.fill_queue(1)  # since we use multiprocessing, 1 is ok
+                # print('fill one!')
         #print('exit!, current size:{}'.format(self.dataset_queue.qsize()))
 
 
@@ -752,121 +785,124 @@ class KittiLoading(object):
         self.f_rgb = [self.f_rgb[i] for i in index]
         self.f_lidar = [self.f_lidar[i] for i in index]
 
+    def get_frame_info(self):
+        return self.cur_frame_info
 
 # for 3dop 2nd-stage testing, based on KittiLoading
-class Loading3DOP(object):
-
-    def __init__(self, object_dir='.', proposals_dir='.', queue_size=20, require_shuffle=False, is_testset=True):
-        self.object_dir, self.proposals_dir = object_dir, proposals_dir
-        self.is_testset, self.require_shuffle = is_testset, require_shuffle
-        
-        self.f_proposal = glob.glob(os.path.join(self.proposals_dir, 'best/*_best.npy' if cfg.LOAD_BEST_PROPOSALS else 'all/*_all.npy'))
-        self.f_proposal.sort()
-        self.f_rgb = glob.glob(os.path.join(self.object_dir, 'training', 'image_2', '*.png'))
-        self.f_rgb.sort()
-        self.f_lidar = glob.glob(os.path.join(self.object_dir, 'training', 'velodyne', '*.bin'))
-        self.f_lidar.sort()
-        assert(len(self.f_proposal) == len(self.f_rgb) == len(self.f_lidar))
-        print(len(self.f_proposal))
-        if self.require_shuffle:
-            index = shuffle([i for i in range(len(self.f_proposal))])
-            self.f_proposal = [self.f_proposal[i] for i in index]
-            self.f_rgb = [self.f_rgb[i] for i in index]
-            self.f_lidar = [self.f_lidar[i] for i in index]
-
-        self.queue_size = queue_size
-        self.require_shuffle = require_shuffle
-        self.preprocess = data.Preprocess()
-
-        self.rgb_queue, self.front_view_queue, self.top_view_queue = Queue(), Queue(), Queue()
-        self.proposals_queue, self.proposal_scores_queue = Queue(), Queue()
-
-        if not self.is_testset:
-            self.f_label = glob.glob(os.path.join(self.object_dir, 'training', 'label_2', '*.txt')).sort()
-            self.label_queue = Queue()
-
-        self.load_index = 0
-        self.fill_queue(self.queue_size)
-
-        # This operation is not thread-safe
-        try:
-            self.top_shape = self.top_view_queue.queue[0].shape
-            self.front_shape = self.front_view_queue.queue[0].shape 
-            self.rgb_shape = self.rgb_queue.queue[0].shape
-        except:
-            # FIXME
-            self.top_shape = (100, 100)
-            self.front_shape = (100, 100)
-            self.rgb_shape = (100, 100)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-    def fill_queue(self, load_amount=0):
-        def to_label(raw_labels):
-            # input: lines of label file
-            # return: [(str, (8, 3))]
-            ret = []
-            for line in raw_labels:
-                data = line.split()
-                obj_class = data[0]
-                # camera coordinate
-                h, w, l, x, y, z, ry = [float(i) for i in data[8:15]]
-                # lidar coordinate
-                # h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry  # Such operations are not correct since there are transisition between lidar and camera coordinate
-                h, w, l, x, y, z, rz = h, w, l, box.camera_to_lidar_coords(x, y, z), -ry-math.pi/2
-                ret.append((obj_class, box3d_compose((x, y, z), (h, w, l), (0, 0, rz))))
-            return ret
-
-        try:
-            for i in range(load_amount):
-                # input: (N, 8)
-                # print(self.load_index)
-                proposals = np.load(self.f_proposal[self.load_index])
-                while len(proposals) == 0: # seems that if feed in empty propsoal to model, it will stuck
-                    self.load_index += 1
-                    proposals = np.load(self.f_proposal[self.load_index])
-
-                self.proposals_queue.put(proposals[:, 0:7])
-                self.proposal_scores_queue.put(proposals[:, 7])
-                
-                self.rgb_queue.put(self.preprocess.rgb(cv2.imread(self.f_rgb[self.load_index])))
-                #self.rgb_queue.put(cv2.imread(self.f_rgb[self.load_index]))
-
-                raw_lidar = np.fromfile(self.f_lidar[self.load_index], dtype=np.float32).reshape((-1, 4))
-                self.top_view_queue.put(lidar_to_top_cuda(raw_lidar))
-                self.front_view_queue.put(lidar_to_front_cuda(raw_lidar))
-
-                if not self.is_testset:
-                    labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
-                    self.label_queue.put(to_label(labels))
-
-                self.load_index += 1
-        except:
-            pass
-
-    def load(self, batch_size=1):
-        try: 
-            if batch_size == 1: # currently only support batch_size == 1
-                ret = (self.proposals_queue.get_nowait(), self.proposal_scores_queue.get_nowait(),
-                       self.top_view_queue.get_nowait(), self.front_view_queue.get_nowait(),
-                       self.rgb_queue.get_nowait())
-            else:
-                ret = (np.array([self.proposals_queue.get_nowait() for i in range(batch_size)]),
-                      np.array([self.proposal_scores_queue.get_nowait() for i in range(batch_size)]),
-                      np.array([self.top_view_queue.get_nowait() for i in range(batch_size)]),
-                      np.array([self.front_view_queue.get_nowait() for i in range(batch_size)]),
-                      np.array([self.rgb_queue.get_nowait() for i in range(batch_size)]))
-            self.fill_queue(batch_size)
-        except:
-            ret = None 
-        return ret
-
-    def get_shape(self):
-        return self.top_shape, self.front_shape, self.rgb_shape
+# class Loading3DOP(object):
+# 
+#     def __init__(self, object_dir='.', proposals_dir='.', queue_size=20, require_shuffle=False, is_testset=True):
+#         self.object_dir, self.proposals_dir = object_dir, proposals_dir
+#         self.is_testset, self.require_shuffle = is_testset, require_shuffle
+#         
+#         self.f_proposal = glob.glob(os.path.join(self.proposals_dir, 'best/*_best.npy' if cfg.LOAD_BEST_PROPOSALS else 'all/*_all.npy'))
+#         self.f_proposal.sort()
+#         self.f_rgb = glob.glob(os.path.join(self.object_dir, 'training', 'image_2', '*.png'))
+#         self.f_rgb.sort()
+#         self.f_lidar = glob.glob(os.path.join(self.object_dir, 'training', 'velodyne', '*.bin'))
+#         self.f_lidar.sort()
+#         assert(len(self.f_proposal) == len(self.f_rgb) == len(self.f_lidar))
+#         print(len(self.f_proposal))
+#         if self.require_shuffle:
+#             index = shuffle([i for i in range(len(self.f_proposal))])
+#             self.f_proposal = [self.f_proposal[i] for i in index]
+#             self.f_rgb = [self.f_rgb[i] for i in index]
+#             self.f_lidar = [self.f_lidar[i] for i in index]
+# 
+#         self.queue_size = queue_size
+#         self.require_shuffle = require_shuffle
+#         self.preprocess = data.Preprocess()
+# 
+#         self.rgb_queue, self.front_view_queue, self.top_view_queue = Queue(), Queue(), Queue()
+#         self.proposals_queue, self.proposal_scores_queue = Queue(), Queue()
+# 
+#         if not self.is_testset:
+#             self.f_label = glob.glob(os.path.join(self.object_dir, 'training', 'label_2', '*.txt')).sort()
+#             self.label_queue = Queue()
+# 
+#         self.load_index = 0
+#         self.fill_queue(self.queue_size)
+# 
+#         # This operation is not thread-safe
+#         try:
+#             self.top_shape = self.top_view_queue.queue[0].shape
+#             self.front_shape = self.front_view_queue.queue[0].shape 
+#             self.rgb_shape = self.rgb_queue.queue[0].shape
+#         except:
+#             # FIXME
+#             self.top_shape = (100, 100)
+#             self.front_shape = (100, 100)
+#             self.rgb_shape = (100, 100)
+# 
+#     def __enter__(self):
+#         return self
+# 
+#     def __exit__(self, exc_type, exc_val, exc_tb):
+#         pass
+# 
+#     def fill_queue(self, load_amount=0):
+#         # no need to do it here
+#         # def to_label(raw_labels):
+#         #     # input: lines of label file
+#         #     # return: [(str, (8, 3))]
+#         #     ret = []
+#         #     for line in raw_labels:
+#         #         data = line.split()
+#         #         obj_class = data[0]
+#         #         # camera coordinate
+#         #         h, w, l, x, y, z, ry = [float(i) for i in data[8:15]]
+#         #         # lidar coordinate
+#         #         # h, w, l, x, y, z, rz = h, l, w, z, -x, -y, -ry  # Such operations are not correct since there are transisition between lidar and camera coordinate
+#         #         h, w, l, x, y, z, rz = h, w, l, box.camera_to_lidar_coords(x, y, z), -ry-math.pi/2
+#         #         ret.append((obj_class, box3d_compose((x, y, z), (h, w, l), (0, 0, rz))))
+#         #     return ret
+# 
+#         try:
+#             for i in range(load_amount):
+#                 # input: (N, 8)
+#                 # print(self.load_index)
+#                 proposals = np.load(self.f_proposal[self.load_index])
+#                 while len(proposals) == 0: # seems that if feed in empty propsoal to model, it will stuck
+#                     self.load_index += 1
+#                     proposals = np.load(self.f_proposal[self.load_index])
+# 
+#                 self.proposals_queue.put(proposals[:, 0:7])
+#                 self.proposal_scores_queue.put(proposals[:, 7])
+#                 
+#                 self.rgb_queue.put(self.preprocess.rgb(cv2.imread(self.f_rgb[self.load_index])))
+#                 #self.rgb_queue.put(cv2.imread(self.f_rgb[self.load_index]))
+# 
+#                 raw_lidar = np.fromfile(self.f_lidar[self.load_index], dtype=np.float32).reshape((-1, 4))
+#                 self.top_view_queue.put(lidar_to_top_cuda(raw_lidar))
+#                 self.front_view_queue.put(lidar_to_front_cuda(raw_lidar))
+# 
+#                 if not self.is_testset:
+#                     labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
+#                     self.label_queue.put(labels)
+# 
+#                 self.load_index += 1
+#         except:
+#             pass
+# 
+#     def load(self, batch_size=1):
+#         try: 
+#             if batch_size == 1: # currently only support batch_size == 1
+#                 ret = (self.proposals_queue.get_nowait(), self.proposal_scores_queue.get_nowait(),
+#                        self.top_view_queue.get_nowait(), self.front_view_queue.get_nowait(),
+#                        self.rgb_queue.get_nowait())
+#             else:
+#                 ret = (np.array([self.proposals_queue.get_nowait() for i in range(batch_size)]),
+#                       np.array([self.proposal_scores_queue.get_nowait() for i in range(batch_size)]),
+#                       np.array([self.top_view_queue.get_nowait() for i in range(batch_size)]),
+#                       np.array([self.front_view_queue.get_nowait() for i in range(batch_size)]),
+#                       np.array([self.rgb_queue.get_nowait() for i in range(batch_size)]))
+#             self.fill_queue(batch_size)
+#         except:
+#             ret = None 
+#         return ret
+# 
+#     def get_shape(self):
+#         return self.top_shape, self.front_shape, self.rgb_shape
 
 
 class BatchLoading3:

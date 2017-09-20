@@ -697,7 +697,8 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
 
     rpn_cls_loss_pos = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores_pos, labels=rpn_labels_pos))
     rpn_cls_loss_all = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_scores, labels=rpn_labels))
-    rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 2.0-1.0), tf.multiply(rpn_cls_loss_all, 1.0))
+    #rpn_cls_loss = tf.add(tf.multiply(rpn_cls_loss_pos, 2.0-1.0), tf.multiply(rpn_cls_loss_all, 1.0))
+    rpn_cls_loss = rpn_cls_loss_all
 
     deltas1       = tf.reshape(deltas,[-1,4])
     rpn_deltas    = tf.gather(deltas1, pos_inds)  # remove ignore label
@@ -987,10 +988,9 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
     #     with tf.variable_scope('loss') as scope:
 
-
-
     return {
-        # for nan loss 
+        # for heat map 
+        'top_rpn_heatmap': top_scores,
         # for mimic batch size
         # These for feed in cumulative loss
         'top_cls_loss_sum': top_cls_loss_sum,

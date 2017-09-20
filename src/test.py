@@ -4,14 +4,18 @@ import glob
 from config import *
 import utils.batch_loading as ub
 import argparse
+import math
 import os
 import sys
 import time
 from utils.training_validation_data_splitter import TrainingValDataSplitter
 from utils.batch_loading import Loading3DOP, KittiLoading
+from utils.batch_loading import BatchLoading3
 import net.processing.boxes3d  as box
 import data as Data
 from net.rpn_target_op import make_bases
+from net.rpn_nms_op     import draw_rpn_proposal
+import numpy as np
 
 
 def test_3dop(args):
@@ -32,8 +36,8 @@ def test_3dop(args):
         count += 1
 
 def test_rpn(args):
-  with KittiLoading(object_dir='~/data/kitti/object_3dop', queue_size=50, require_shuffle=False,
-    is_testset=True, use_precal_view=True) as testset:
+  with KittiLoading(object_dir='~/data/kitti/object', queue_size=50, require_shuffle=False,
+    is_testset=True, use_precal_view=False) as testset:
     os.makedirs(args.target_dir, exist_ok=True)
     test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
     data = testset.load()
@@ -43,11 +47,111 @@ def test_rpn(args):
       tag, rgb, _, top_view, front_view = data
       box3d, rgb_roi, top_roi, roi_score = test(top_view, front_view, rgb)
       # ret = np.hstack((box3d, roi_score))
+      test.log_rpn(step=0, scope_name='test_rpn')
       np.save(os.path.join(args.target_dir, '{}_boxes3d.npy'.format(tag[0])), box3d)
+      np.save(os.path.join(args.target_dir, '{}_boxes_top.npy'.format(tag[0])), box3d)
       np.save(os.path.join(args.target_dir, '{}_score.npy'.format(tag[0])), roi_score)
+      img = draw_rpn_proposal(test.top_image, top_roi, roi_score)
+      test.summary_image(img, 'test_rpn' + '/img_rpn_proposal',step=0) # just all the proposals. after nms, lighter color, higher score
+      img_gt = draw_rpn_gt(test.top_image, test.batch_gt_top_boxes, test.batch_gt_labels)
+      test.summary_image(img_gt, 'test_rpn' + '/img_rpn_gt',step=0) # just all the proposals. after nms, lighter color, higher score
 
       data = testset.load()
       count += 1
+
+def test_rpn_raw_dataset(args):
+    with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=False, queue_size=5, use_multi_process_num=1) as testset:
+        count = 0
+        test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
+        print('end init')
+        topk = 100
+        repeat = False
+        while True:
+            if repeat == False:
+                test.batch_rgb_images, test.batch_top_view, test.batch_front_view, \
+                test.batch_gt_labels, test.batch_gt_boxes3d, test.frame_id = \
+                    testset.load()
+                print('done load')
+                print(test.batch_gt_labels)
+                print(test.batch_gt_boxes3d)
+                print(test.frame_id)
+            box3d, rgb_roi, top_roi, roi_score = test(test.batch_top_view, test.batch_front_view, test.batch_rgb_images)
+            print('done test')
+            index = np.argsort(roi_score)[::-1][:topk]
+            test.batch_proposals = test.batch_proposals[index]
+            test.batch_proposal_scores = test.batch_proposal_scores[index]
+            print(test.batch_proposal_scores)
+            test.log_rpn(step=count, scope_name='test_rpn')
+            count += 1
+            print('done log')
+            print('input anything for continue.')
+            index = sys.stdin.readline()[:-1]
+            if index == 'n':
+                repeat = False
+                continue
+            elif index == 'q':
+                sys.exit(0)
+            else:
+                try:
+                    topk = int(index)
+                    repeat = True
+                except:
+                    print('invalid input')
+                    repeat = True
+                    continue
+                
+
+def test_rpn_origin_dataset(args):
+    with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=False, 
+         is_testset=False, use_precal_view=False, use_multi_process_num=0) as testset:
+        count = 0
+        test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
+        print('end init')
+        topk = 100
+        index = 1
+        while True:
+            data = testset.load_specified(index)
+            tag, label, rgb, _, top_view, front_view = data 
+            test.batch_rgb_images = rgb 
+            test.batch_top_view = top_view 
+            test.batch_front_view = front_view 
+            test.batch_gt_boxes3d, test.batch_gt_labels = Data.kitti_label_to_lidar_box3d(label[0], 'Car', positive_only=False)
+            # test.batch_gt_labels = np.ones((1, test.batch_gt_boxes3d.shape[1]))
+            test.frame_id = tag 
+            print('done load')
+            print(test.frame_id)
+            box3d, rgb_roi, top_roi, roi_score, top_rpn_heatmap = test(test.batch_top_view, test.batch_front_view, test.batch_rgb_images)
+            print('done test')
+            index = np.argsort(roi_score)[::-1][:topk]
+            test.batch_proposals = test.batch_proposals[index]
+            test.batch_proposal_scores = test.batch_proposal_scores[index]
+            print(test.batch_proposal_scores)
+            test.log_rpn(step=count, scope_name='test_rpn')
+            
+            # generate heatmap 
+            # top_rpn_heatmap: (1, W, H, 4*2)
+            top_rpn_heatmap = top_rpn_heatmap[0, :, :, 1::2]
+            heatmap = np.max(top_rpn_heatmap, axis=2)
+            heatmap = heatmap.clip(min=-400, max=10)
+            heatmap = (1./(1.+(math.e**(-heatmap)))*255).astype(np.int32)
+            from IPython import embed; embed()
+            img = np.dstack([heatmap, heatmap, heatmap])
+            test.summary_image(img, 'test_rpn' + '/rpn_cls_heatmap', step=0)  #just RPN gt
+            count += 1
+            print('done log')
+            print('input anything for continue.')
+            indata = sys.stdin.readline()[:-1]
+            if indata == 'n':
+                continue
+            elif indata == 'q':
+                sys.exit(0)
+            else:
+                try:
+                    index, topk = [int(i) for i in indata.split()]
+                except:
+                    print('invalid input')
+                    continue
+                
 
 def test_mv3d(args):
     with KittiLoading(object_dir='~/data/kitti/object', queue_size=50, require_shuffle=False,
@@ -82,7 +186,7 @@ def test_single_mv3d(args):
             try:
               data = testset.load_specified(index)
               tag, label, rgb, _, top_view, front_view = data 
-              gt_box3d = Data.kitti_label_to_lidar_box3d(label[0], 'Car')
+              gt_box3d = Data.kitti_label_to_lidar_box3d(label[0], 'Car', positive_only=True)
               boxes3d, labels, probs = test(top_view, front_view, rgb, threshold, gt_boxes3d=gt_box3d)
               test.dump_log(args.target_dir, index)
             except:
@@ -115,7 +219,7 @@ def test_rpn_target_interact(args):
             try:
               data = testset.load_specified(index)
               tag, label, rgb, _, top_view, front_view = data 
-              gt_box3d = Data.kitti_label_to_lidar_box3d(label[0], 'Car')  # only support batch size  == 1
+              gt_box3d = Data.kitti_label_to_lidar_box3d(label[0], 'Car', positive_only=True)  # only support batch size  == 1
               gt_labels = np.ones((1, len(gt_box3d[0]))) # only support batch size == 1
               amount, amount_pos = test(top_view, front_view, rgb, bases, gt_boxes3d=gt_box3d, gt_labels=gt_labels)
               print('anchor amount: {}, pos:{}'.format(amount, amount_pos))
@@ -147,7 +251,7 @@ def test_rpn_target(args):
             try:
               data = testset.load_specified(index)
               tag, label, rgb, _, top_view, front_view = data 
-              gt_box3d = Data.kitti_label_to_lidar_box3d(label[0], 'Car')  # only support batch size  == 1
+              gt_box3d = Data.kitti_label_to_lidar_box3d(label[0], 'Car', positive_only=True)  # only support batch size  == 1
               gt_labels = np.ones((1, len(gt_box3d[0]))) # only support batch size == 1
               amount, amount_pos = test(top_view, front_view, rgb, bases, gt_boxes3d=gt_box3d, gt_labels=gt_labels)
               print('{} anchor amount: {}, pos:{}'.format(index, amount, amount_pos))
@@ -476,10 +580,11 @@ if __name__ == '__main__':
 
     # test_3dop()
     # test_rpn(args)
+    test_rpn_origin_dataset(args)
     # test_lidar_fast()
     # test_lidar()
     # test_mv3d(args)
-    test_single_mv3d(args)
+    # test_single_mv3d(args)
     # if args.interactive:
     #     test_rpn_target_interact(args)
     # else:

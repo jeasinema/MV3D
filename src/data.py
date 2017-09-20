@@ -183,9 +183,9 @@ class Preprocess(object):
 proprocess = Preprocess()
 
 
-def kitti_label_to_lidar_box3d(label, object_type='Car'):
+def kitti_label_to_lidar_box3d(label, object_type='Car', positive_only=True):
     # input: A list of lines in single Kitti label file
-    # output: [1, N, 8, 3]
+    # output: [1, N, 8, 3] only support batch size of 1
     ret = []
     for t in [['Car', 'Van'],['Pedestrian'], ['Cyclist']]:
         if object_type in t:
@@ -194,15 +194,31 @@ def kitti_label_to_lidar_box3d(label, object_type='Car'):
     else:
         return np.array([ret])
     
-    for line in label:
-        line = line.split()
-        obj = line[0]
-        if obj in category: #or obj == 'Tram' or obj == 'Truck':
+    if positive_only:
+        for line in label:
+            line = line.split()
+            obj = line[0]
+            if obj in category: #or obj == 'Tram' or obj == 'Truck':
+                h, w, l, x, y, z, ry = [float(i) for i in line[8:15]]
+                h, w, l, x, y, z, rz = h, w, l, *camera_to_lidar_coords(x, y, z), -ry-math.pi/2
+                gt_box3d = box3d_compose((x, y, z), (h, w, l), (0, 0, rz))
+                ret.append(gt_box3d)
+        return np.array([ret])
+    else:
+        ret_label = []
+        for line in label:
+            line = line.split()
+            obj = line[0]
+            if obj == 'DontCare': continue 
+            elif obj in category:
+                ret_label.append(1)
+            else:
+                ret_label.append(0)
             h, w, l, x, y, z, ry = [float(i) for i in line[8:15]]
             h, w, l, x, y, z, rz = h, w, l, *camera_to_lidar_coords(x, y, z), -ry-math.pi/2
             gt_box3d = box3d_compose((x, y, z), (h, w, l), (0, 0, rz))
             ret.append(gt_box3d)
-    return np.array([ret])
+        return np.array([ret]), np.array([ret_label])
 
 
 def filter_center_car(lidar):

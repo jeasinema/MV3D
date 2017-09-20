@@ -7,7 +7,7 @@ import argparse
 import os
 import time
 from utils.training_validation_data_splitter import TrainingValDataSplitter
-from utils.batch_loading import BatchLoading3
+from utils.batch_loading import BatchLoading3, KittiLoading
 
 
 if __name__ == '__main__':
@@ -127,9 +127,13 @@ if __name__ == '__main__':
     #with BatchLoading(data_splitter.training_bags, data_splitter.training_tags, require_shuffle=True) as training:
         #with BatchLoading(data_splitter.val_bags, data_splitter.val_tags,
     #                      queue_size=1, require_shuffle=True) as validation:
-    with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=False, queue_size=30, use_multi_process_num=4) as training:
-      with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=False, queue_size=30, use_multi_process_num=1) as validation:
+    # with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=False, queue_size=30, use_multi_process_num=4) as training:
+    #   with BatchLoading3(tags=validation_dataset, require_shuffle=False, use_precal_view=False, queue_size=30, use_multi_process_num=1) as validation:
+    with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=False, 
+         is_testset=False, use_precal_view=False, use_multi_process_num=4, split_file='/home/maxiaojian/workspace/eval-kitti/MV3D/ImageSets/train.txt') as training:
+      with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=False, 
+           is_testset=False, use_precal_view=False, use_multi_process_num=1, split_file='/home/maxiaojian/workspace/eval-kitti/MV3D/ImageSets/val.txt') as validation:
             train = mv3d.Trainer(train_set=training, validation_set=validation,
                                  pre_trained_weights=weights, train_targets=targets, log_tag=tag,
                                  continue_train = not args.clear_progress, batch_size=args.batch_size, lr=args.lr)
-            train(max_iter=max_iter) 
+            train(max_iter=max_iter)

@@ -60,7 +60,7 @@ def draw_rpn_proposal(image, rois, roi_scores, darker=0.75,draw_num=100):
     for n in range(0, num):
         i   = inds[n]
         box = rois[i,1:5].astype(np.int)
-        v=254*(1-roi_scores[i])+1
+        v=254*(roi_scores[i])+1
         color = (0,v,v)
         cv2.rectangle(img_rpn_nms,(box[0], box[1]), (box[2], box[3]), color, 1)
 
