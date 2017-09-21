@@ -606,6 +606,7 @@ class KittiLoading(object):
         # This operation is not thread-safe
         #import pycuda.autoinit # must do this after fork child
         try:
+            # TODO: this must failed!
             tmp = self.load_specified()
             self.top_shape = tmp[3].shape
             self.front_shape = tmp[4].shape
@@ -616,14 +617,7 @@ class KittiLoading(object):
             self.top_shape = (800, 600, 27)
             self.front_shape = (cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3)
             self.rgb_shape = (cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH, 3)
-
-        if self.use_multi_process_num == 0:
-            self.loader_worker = [threading.Thread(target=self.loader_worker_main)]
-        else:
-            self.loader_worker = [Process(target=self.loader_worker_main) for i in range(self.use_multi_process_num)]
-        self.work_exit = False
-        [i.start() for i in self.loader_worker]
-
+    
     def __enter__(self):
         return self
 
