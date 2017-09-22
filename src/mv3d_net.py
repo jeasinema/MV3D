@@ -67,8 +67,9 @@ def top_feature_net(input, anchors, inds_inside, num_bases, nms_thresh):
 
 
     with tf.variable_scope('top-for-rpn') as scope:
-        up   = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
-        top_rpn_stride = stride/2
+        # up   = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
+        # top_rpn_stride = stride/2
+        top_rpn_stride = stride
         up      = conv2d_bn_relu(up, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
         scores  = conv2d(up, num_kernels=2*num_bases, kernel_size=(1,1), stride=[1,1,1,1], padding='SAME', name='score')
         probs   = tf.nn.softmax( tf.reshape(scores,[-1,2]), name='prob')

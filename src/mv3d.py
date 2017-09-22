@@ -1082,6 +1082,7 @@ class Trainer(MV3D):
                     if iter%ckpt_save_step==0:
                         print('start save weights')
                         self.save_weights(self.train_target, iter)
+                        self.save_progress()
                         print('Save target at {}'.format(self.ckpt_dir))
 
                         if cfg.TRAINING_TIMER:

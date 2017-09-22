@@ -151,7 +151,36 @@ def test_rpn_origin_dataset(args):
                 except:
                     print('invalid input')
                     continue
-                
+
+ def test_rpn_origin_dataset_batch(args):
+    with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=False, 
+         is_testset=False, use_precal_view=False, use_multi_process_num=0) as testset:
+        count = 0
+        test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
+        print('end init')
+        topk = 100
+        index = 0
+        for index in range(len(testset)):
+            data = testset.load_specipied(index)
+            tag, label, rgb, _, top_view, front_view = data 
+            test.batch_rgb_images = rgb 
+            test.batch_top_view = top_view 
+            test.batch_front_view = front_view 
+            test.batch_gt_boxes3d, test.batch_gt_labels = Data.kitti_label_to_lidar_box3d(label[0], 'Car', positive_only=False)
+            # test.batch_gt_labels = np.ones((1, test.batch_gt_boxes3d.shape[1]))
+            test.frame_id = tag 
+            print('done load')
+            print(test.frame_id)
+            box3d, rgb_roi, top_roi, roi_score, top_rpn_heatmap = test(test.batch_top_view, test.batch_front_view, test.batch_rgb_images)
+            print('done test')
+            index = np.argsort(roi_score)[::-1][:topk]
+            test.batch_proposals = test.batch_proposals[index]
+            test.batch_proposal_scores = test.batch_proposal_scores[index]
+            print(test.batch_proposal_scores)
+            test.log_rpn(step=count, scope_name='test_rpn')
+
+            # eval all file 
+               
 
 def test_mv3d(args):
     with KittiLoading(object_dir='~/data/kitti/object', queue_size=50, require_shuffle=False,

@@ -595,6 +595,7 @@ class KittiLoading(object):
         self.preprocess = data.Preprocess()
         self.dataset_queue = Queue()  # must use the queue provided by multiprocessing module(only this can be shared)
 
+
         self.load_index = 0
         if self.use_multi_process_num == 0:
             self.loader_worker = [threading.Thread(target=self.loader_worker_main)]
