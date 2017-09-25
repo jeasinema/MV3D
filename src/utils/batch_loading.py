@@ -550,9 +550,11 @@ class BatchLoading2:
 class KittiLoading(object):
 
     def __init__(self, object_dir='.', queue_size=20, require_shuffle=False, is_testset=True, batch_size=1, use_precal_view=False, use_multi_process_num=0, split_file=''):
+        assert(use_multi_process_num > 0)
         self.object_dir = object_dir
         self.is_testset, self.require_shuffle, self.use_precal_view = is_testset, require_shuffle, use_precal_view
-        self.use_multi_process_num = use_multi_process_num 
+        self.use_multi_process_num = use_multi_process_num if not self.is_testset else 1
+        self.require_shuffle = require_shuffle if not self.is_testset else False
         self.batch_size=batch_size
         self.split_file = split_file 
 
@@ -601,7 +603,7 @@ class KittiLoading(object):
             self.loader_worker = [threading.Thread(target=self.loader_worker_main)]
         else:
             self.loader_worker = [Process(target=self.loader_worker_main) for i in range(self.use_multi_process_num)]
-        self.work_exit = False
+        self.work_exit = Value('i', 0)
         [i.start() for i in self.loader_worker]
 
         # This operation is not thread-safe
@@ -623,7 +625,7 @@ class KittiLoading(object):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.work_exit = True
+        self.work_exit.value = True
 
     def __len__(self):
         return self.dataset_size
@@ -646,32 +648,36 @@ class KittiLoading(object):
         #         ret.append((obj_class, box3d_compose((x, y, z), (h, w, l), (0, 0, rz))))
         #     return ret
 
+        load_index = self.load_index
+        self.load_index += max_load_amount
         for _ in range(max_load_amount):
             try:
-                rgb = self.preprocess.rgb(cv2.imread(self.f_rgb[self.load_index]))
-                raw_lidar = np.fromfile(self.f_lidar[self.load_index], dtype=np.float32).reshape((-1, 4))
+                rgb = self.preprocess.rgb(cv2.imread(self.f_rgb[load_index]))
+                raw_lidar = np.fromfile(self.f_lidar[load_index], dtype=np.float32).reshape((-1, 4))
                 if self.use_precal_view:
                     try:
-                        top_view = np.load(self.f_top[self.load_index])
+                        top_view = np.load(self.f_top[load_index])
                     except:
                         top_view = lidar_to_top_cuda(raw_lidar)
                     try:
-                        front_view = np.load(self.f_front[self.load_index])
+                        front_view = np.load(self.f_front[load_index])
                     except:
                         front_view = lidar_to_front_cuda(raw_lidar)
                 else: 
                     #print('before cuda')
                     top_view = lidar_to_top_cuda(raw_lidar)
+                    # top_view[:, :, 26] = np.zeros_like(top_view[:, :, 0]) # 26 is density 
+                    # top_view[:, :, 25] = np.zeros_like(top_view[:, :, 0]) # 25 is intensity
                 # top_view = np.ones((400, 400, 10), dtype=np.float32)
                     front_view = lidar_to_front_cuda(raw_lidar)
                     #print('after cuda')
                 # front_view = np.ones((cfg.FRONT_WIDTH, cfg.FRONT_HEIGHT, 3), dtype=np.float32)
-                labels = [line for line in open(self.f_label[self.load_index], 'r').readlines()]
-                tag = self.data_tag[self.load_index]
+                labels = [line for line in open(self.f_label[load_index], 'r').readlines()]
+                tag = self.data_tag[load_index]
 
                 self.dataset_queue.put_nowait((labels, rgb, raw_lidar, top_view, front_view, tag))
-                self.load_index += 1
-                # print("Fill {}, now size:{}".format(self.load_index, self.dataset_queue.qsize()))
+                load_index += 1
+                # print("Fill {}, now size:{}".format(load_index, self.dataset_queue.qsize()))
             except:
                 print('GG')
                 if not self.is_testset:  # test set just end
@@ -679,7 +685,7 @@ class KittiLoading(object):
                     if self.require_shuffle:
                         self.shuffle_dataset()
                 else:
-                    self.work_exit = True
+                    self.work_exit.value = True
 
     def load(self):
         # output:
@@ -761,8 +767,12 @@ class KittiLoading(object):
 
 
     def loader_worker_main(self):
+        print('before start')
+        print('start')
         import pycuda.autoinit 
-        while not self.work_exit:
+        if self.require_shuffle:
+            self.shuffle_dataset()
+        while not self.work_exit.value:
             if self.dataset_queue.qsize() >= self.queue_size // 2:
                 time.sleep(1)
             else:
@@ -775,10 +785,14 @@ class KittiLoading(object):
         return self.top_shape, self.front_shape, self.rgb_shape
 
     def shuffle_dataset(self):
-        index = shuffle([i for i in range(len(self.f_rgb))])
+        # to prevent diff loader load same data
+        index = shuffle([i for i in range(len(self.f_rgb))], random_state=random.randint(0, self.use_multi_process_num**5))
         self.f_label = [self.f_label[i] for i in index]
         self.f_rgb = [self.f_rgb[i] for i in index]
         self.f_lidar = [self.f_lidar[i] for i in index]
+        self.f_top = [self.f_top[i] for i in index]
+        self.f_front = [self.f_front[i] for i in index]
+        self.data_tag = [self.data_tag[i] for i in index]
 
     def get_frame_info(self):
         return self.cur_frame_info

@@ -34,7 +34,7 @@ f_label = glob.glob(os.path.join(base_res_path, '*_labels.npy'))
 f_label.sort()
 f_probs = glob.glob(os.path.join(base_res_path, '*_probs.npy'))
 f_probs.sort()
-base_dataset_path = '/data/mxj/kitti/object_3dop/training'
+base_dataset_path = '/home/maxiaojian/data/kitti/object/training'
 f_top_view = glob.glob(os.path.join(base_dataset_path, 'top_view', '*.npy'))
 f_top_view.sort() 
 f_top_view = f_top_view
@@ -42,7 +42,8 @@ f_rgb = glob.glob(os.path.join(base_dataset_path, 'image_2', '*.png'))
 f_rgb.sort()
 f_rgb = f_rgb
 tags = [name.split('/')[-1].split('.')[-2] for name in f_rgb]
-assert(len(f_boxes3d) == len(f_label) == len(f_probs) == len(f_top_view) == len(f_rgb))
+# assert(len(f_boxes3d) == len(f_label) == len(f_probs) == len(f_top_view) == len(f_rgb))
+assert(len(f_boxes3d) == len(f_probs))
 
 # return 3d projections
 def box3d_to_rgb_box(boxes3d, Mt=None, Kt=None):
@@ -146,18 +147,18 @@ def generate_result(tag, boxes3d, prob):
 
 def handler(i):
 	tag = tags[i]
-	top = np.load(f_top_view[i])
-	rgb = cv2.imread(f_rgb[i])
+	# top = np.load(f_top_view[i])
+	# rgb = cv2.imread(f_rgb[i])
 	boxes3d = np.load(f_boxes3d[i])
 	prob = np.load(f_probs[i])
-	visualize_result(tag, top, rgb, boxes3d, prob)
+	# visualize_result(tag, top, rgb, boxes3d, prob)
 	generate_result(tag, boxes3d, prob)
 	print(i)
 
 def main(args):
 	pro = Pool(10)
 	#handler(3000)
-	pro.map(handler, [i for i in range(len(f_top_view))])
+	pro.map(handler, [i for i in range(len(f_boxes3d))])
 
 def top_image_padding(top_image):
     return np.concatenate((top_image, np.zeros_like(top_image)*255,np.zeros_like(top_image)*255), 1)

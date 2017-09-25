@@ -67,8 +67,9 @@ def top_feature_net(input, anchors, inds_inside, num_bases, nms_thresh):
 
 
     with tf.variable_scope('top-for-rpn') as scope:
-        # up   = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
-        # top_rpn_stride = stride/2
+        #up   = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
+        #top_rpn_stride = stride/2
+        up = block
         top_rpn_stride = stride
         up      = conv2d_bn_relu(up, num_kernels=128, kernel_size=(3,3), stride=[1,1,1,1], padding='SAME', name='2')
         scores  = conv2d(up, num_kernels=2*num_bases, kernel_size=(1,1), stride=[1,1,1,1], padding='SAME', name='score')
@@ -121,8 +122,10 @@ def top_feature_net_r(input, anchors, inds_inside, num_bases, nms_thresh):
 
 
     with tf.variable_scope('predict-for-rpn') as scope:
-        up = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
-        top_rpn_stride = stride/2
+        # up = upsample2d(block, factor = 2, has_bias=True, trainable=True, name='1')
+        # top_rpn_stride = stride/2
+        up = block
+        top_rpn_stride = stride
         up = conv2d_bn_relu(up, num_kernels=128, kernel_size=(3, 3), stride=[1, 1, 1, 1], padding='SAME', name='2')
         scores = conv2d(up, num_kernels=2 * num_bases, kernel_size=(1, 1), stride=[1, 1, 1, 1], padding='SAME',name='score')
         probs = tf.nn.softmax(tf.reshape(scores, [-1, 2]), name='prob')
@@ -757,7 +760,6 @@ def remove_empty_anchor(top_view, top_anchors, top_inside_inds):
 def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
     out_shape = (8, 3)
-    stride = 8
 
     # for mimic batch size
     top_cls_loss_sum = tf.placeholder(shape=[], dtype=tf.float32, name='top_cls_loss_sum')

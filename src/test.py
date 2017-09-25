@@ -9,7 +9,7 @@ import os
 import sys
 import time
 from utils.training_validation_data_splitter import TrainingValDataSplitter
-from utils.batch_loading import Loading3DOP, KittiLoading
+from utils.batch_loading import KittiLoading
 from utils.batch_loading import BatchLoading3
 import net.processing.boxes3d  as box
 import data as Data
@@ -36,28 +36,24 @@ def test_3dop(args):
         count += 1
 
 def test_rpn(args):
-  with KittiLoading(object_dir='~/data/kitti/object', queue_size=50, require_shuffle=False,
-    is_testset=True, use_precal_view=False) as testset:
+  with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=True,
+    is_testset=True, use_precal_view=False, use_multi_process_num=1) as testset:
     os.makedirs(args.target_dir, exist_ok=True)
     test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
-    data = testset.load()
-    count = 1
-    while data:
-      print('Process {} data'.format(count))
-      tag, rgb, _, top_view, front_view = data
-      box3d, rgb_roi, top_roi, roi_score = test(top_view, front_view, rgb)
-      # ret = np.hstack((box3d, roi_score))
-      test.log_rpn(step=0, scope_name='test_rpn')
-      np.save(os.path.join(args.target_dir, '{}_boxes3d.npy'.format(tag[0])), box3d)
-      np.save(os.path.join(args.target_dir, '{}_boxes_top.npy'.format(tag[0])), box3d)
-      np.save(os.path.join(args.target_dir, '{}_score.npy'.format(tag[0])), roi_score)
-      img = draw_rpn_proposal(test.top_image, top_roi, roi_score)
-      test.summary_image(img, 'test_rpn' + '/img_rpn_proposal',step=0) # just all the proposals. after nms, lighter color, higher score
-      img_gt = draw_rpn_gt(test.top_image, test.batch_gt_top_boxes, test.batch_gt_labels)
-      test.summary_image(img_gt, 'test_rpn' + '/img_rpn_gt',step=0) # just all the proposals. after nms, lighter color, higher score
-
+    for i in range(len(testset)):
       data = testset.load()
-      count += 1
+      tag, rgb, _, top_view, front_view = data
+      print('Process {} data'.format(tag))
+      box3d, rgb_roi, top_roi, roi_score, _ = test(top_view, front_view, rgb)
+      # ret = np.hstack((box3d, roi_score))
+      # test.log_rpn(step=0, scope_name='test_rpn')
+      np.save(os.path.join(args.target_dir, '{}_boxes3d.npy'.format(tag[0])), box3d)
+      # np.save(os.path.join(args.target_dir, '{}_boxes_top.npy'.format(tag[0])), box3d)
+      np.save(os.path.join(args.target_dir, '{}_probs.npy'.format(tag[0])), roi_score)
+      # img = draw_rpn_proposal(test.top_image, top_roi, roi_score)
+      # test.summary_image(img, 'test_rpn' + '/img_rpn_proposal',step=0) # just all the proposals. after nms, lighter color, higher score
+      # img_gt = draw_rpn_gt(test.top_image, test.batch_gt_top_boxes, test.batch_gt_labels)
+      # test.summary_image(img_gt, 'test_rpn' + '/img_rpn_gt',step=0) # just all the proposals. after nms, lighter color, higher score
 
 def test_rpn_raw_dataset(args):
     with BatchLoading3(tags=training_dataset, require_shuffle=True, use_precal_view=False, queue_size=5, use_multi_process_num=1) as testset:
@@ -152,9 +148,12 @@ def test_rpn_origin_dataset(args):
                     print('invalid input')
                     continue
 
- def test_rpn_origin_dataset_batch(args):
+def test_rpn_origin_dataset_batch(args):
+    """
+    treat rpn as a one stage detector for test
+    """
     with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=False, 
-         is_testset=False, use_precal_view=False, use_multi_process_num=0) as testset:
+            is_testset=False, use_precal_view=False, use_multi_process_num=0) as testset:
         count = 0
         test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
         print('end init')
@@ -608,8 +607,8 @@ if __name__ == '__main__':
     print('\n\n{}\n\n'.format(args))
 
     # test_3dop()
-    # test_rpn(args)
-    test_rpn_origin_dataset(args)
+    test_rpn(args)
+    # test_rpn_origin_dataset(args)
     # test_lidar_fast()
     # test_lidar()
     # test_mv3d(args)

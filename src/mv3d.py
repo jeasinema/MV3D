@@ -988,7 +988,7 @@ class Trainer(MV3D):
             #batch_size=1
 
             #FIXME
-            validation_step=100 # should be the ratio between the test set size and the val set size(not a strict requirement)
+            validation_step=10 # should be the ratio between the test set size and the val set size(not a strict requirement)
             ckpt_save_step=1000
             self.iter_debug=500  #FIXME this is freq for log image
             summary_step=200  # this is freq for log loss
@@ -1039,10 +1039,13 @@ class Trainer(MV3D):
                     #     data_set.load()
                     
                     # load from object 
-                    self.frame_id, _label, self.batch_rgb_images, _, self.batch_top_view, self.batch_front_view = data_set.load()
-                    # cal labels and gt_boxes3d 
-                    self.batch_gt_boxes3d, self.batch_gt_labels = data.kitti_label_to_lidar_box3d(_label[0], 'Car', positive_only=False)
-
+                    try:
+                        self.frame_id, _label, self.batch_rgb_images, _, self.batch_top_view, self.batch_front_view = data_set.load()
+                        # cal labels and gt_boxes3d 
+                        self.batch_gt_boxes3d, self.batch_gt_labels = data.kitti_label_to_lidar_box3d(_label[0], 'Car', positive_only=False)
+                    except:
+                        print('data load fialed!')
+                        from IPython import embed; embed()
                     # skip empty data 
                     if len(self.batch_gt_labels[0][self.batch_gt_labels[0] == 1]) <= 0:
                         continue 
@@ -1076,8 +1079,8 @@ class Trainer(MV3D):
                         continue
 
                     if print_loss:
-                        self.log_msg.write('%10s: |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
-                                           (step_name, self.n_global_step, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss))
+                        self.log_msg.write('%10s: | %10s |  %5d  %0.5f   %0.5f   |   %0.5f   %0.5f \n' % \
+                                           (step_name, self.frame_id, self.n_global_step, t_cls_loss, t_reg_loss, f_cls_loss, f_reg_loss))
 
                     if iter%ckpt_save_step==0:
                         print('start save weights')
@@ -1451,11 +1454,11 @@ class Tester_RPN(MV3D):
         self.rgb_image = rgb_image
         self.front_view = front_view
 
-        self.batch_gt_top_boxes = data.box3d_to_top_box(self.batch_gt_boxes3d[0])
+        # self.batch_gt_top_boxes = data.box3d_to_top_box(self.batch_gt_boxes3d[0])
 
-        print('remove')
+        # print('remove')
         self.anchors_inside_inds = remove_empty_anchor(self.top_view[0], self.top_view_anchors, cfg.REMOVE_THRES)  # only support batch size  == 1
-        print('done remove')
+        # print('done remove')
         fd1 = {
             self.net['top_view']: self.top_view,
             self.net['top_anchors']: self.top_view_anchors,
@@ -1466,11 +1469,11 @@ class Tester_RPN(MV3D):
 
         self.batch_proposals, self.batch_proposal_scores, self.top_rpn_heatmap = \
             self.sess.run([self.net['proposals'], self.net['proposal_scores'], self.net['top_rpn_heatmap']], fd1)
-        print('done run')
+        # print('done run')
         self.batch_proposal_scores = np.reshape(self.batch_proposal_scores, (-1))
         self.top_rois = self.batch_proposals
         if len(self.top_rois) == 0:
-            return np.zeros((0, 8, 3)), []
+            return np.zeros((0, 8, 3)), np.zeros((0, 5)), np.zeros((0, 5)), np.zeros((0)), ()
 
         self.rois3d = project_to_roi3d(self.top_rois)
         # Here we just use the pre-defined height to generate the z axis.

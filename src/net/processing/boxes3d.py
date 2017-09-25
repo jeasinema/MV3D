@@ -151,7 +151,7 @@ def box3d_to_rgb_box(boxes3d, Mt=None, Kt=None):
         projections = np.zeros((num,8,2),  dtype=np.int32)
         for n in range(num):
             box3d = boxes3d[n]
-            Ps = np.hstack(( box3d, np.ones((8,1))) )
+            Ps = np.hstack(( box3d, np.ones((8,1))))
             Qs = np.matmul(Ps,Mt)
             Qs = Qs[:,0:3]
             qs = np.matmul(Qs,Kt)

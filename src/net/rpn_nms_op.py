@@ -50,7 +50,7 @@ def draw_rpn_deltal_apply(image, probs, deltas, anchors, inside_inds, threshold=
     return img_rpn
 
 
-def draw_rpn_proposal(image, rois, roi_scores, darker=0.75,draw_num=100):
+def draw_rpn_proposal(image, rois, roi_scores, darker=1,draw_num=100):
     img_rpn_nms = image.copy()*darker
 
     scores = roi_scores
