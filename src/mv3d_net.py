@@ -847,7 +847,11 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
             print('\n\n!!!! disable top view fusion\n\n')
 
         else:
-            if cfg.USE_FRONT:
+            if cfg.USE_TOP_ONLY:
+                fuse_output_without_rgb, fuse_output_with_rgb = fusion_net(
+                    ([top_features, top_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / top_feature_rcnn_stride],),
+                    num_class, out_shape)
+            elif cfg.USE_FRONT:
                 fuse_output_without_rgb, fuse_output_with_rgb = fusion_net(
                     ([top_features, top_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / top_feature_rcnn_stride],
                      [front_features, front_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / front_stride],  # disable by 0,0
@@ -857,7 +861,7 @@ def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
                 fuse_output_without_rgb, fuse_output_with_rgb = fusion_net(
                     ([top_features, top_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / top_feature_rcnn_stride],
                      [rgb_features, rgb_rois, cfg.ROI_POOLING_HEIGHT, cfg.ROI_POOLING_WIDTH, 1. / rgb_stride],),
-                    num_class, out_shape) 
+                    num_class, out_shape)
 
 
         # include background class
