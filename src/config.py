@@ -44,9 +44,9 @@ __C.BOX3D_Z_MIN=-2.3 # -2.52
 __C.BOX3D_Z_MAX=1.5 # -1.02
 
 __C.USE_FRONT=1
-__C.GPU_AVAILABLE='3'
+__C.GPU_AVAILABLE='1'
 __C.GPU_USE_COUNT=1
-__C.GPU_MEMORY_FRACTION=0.4
+__C.GPU_MEMORY_FRACTION=0.3
 
 # selected object 
 __C.DETECT_OBJ=['Car', 'Van']
@@ -59,8 +59,8 @@ __C.REMOVE_THRES=0.0
 # for NMS
 __C.USE_GPU_NMS=0
 #### don't forget to change the TOPN values in configuration.py in the same time!!!
-__C.RPN_NMS_THRESHOLD=0.7 # when run, is 0
-__C.RCNN_NMS_THRESHOLD=0.75
+__C.RPN_NMS_THRESHOLD=0.5 # when run, is 0
+__C.RCNN_NMS_THRESHOLD=0.4
 
 # for RCNN fusion output(selected result retrieval)
 __C.USE_HANDCRAFT_FUSION=0 # use man-restrict fusion rule or just a learnable rule.
@@ -74,6 +74,11 @@ __C.ROI_ENLARGE_RATIO=1.5
 # for RoI pooling
 __C.ROI_POOLING_HEIGHT=6
 __C.ROI_POOLING_WIDTH=6
+
+# for using orintation classification
+__C.USE_ORINT_CLS=0
+__C.ORINT_MAX=90
+__C.ORINT_STEP=10 # MAX/STEP=9 classes
 
 # for conv3d on bbox regress
 __C.POINT_AMOUNT_LIMIT=100000

@@ -79,6 +79,7 @@ def box3d_in_top_view(boxes3d):
     return True
 
 def box3d_to_top_box(boxes3d):
+    # to get the enveloped box
 
     num  = len(boxes3d)
     boxes = np.zeros((num,4),  dtype=np.float32)

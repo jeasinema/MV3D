@@ -681,7 +681,7 @@ class Predictor(MV3D):
 
 
     def __call__(self, top_view, front_view, rgb_image, nms_threshold=0.5, gt_boxes3d=[]):
-        return self.predict(top_view, front_view, rgb_image, score_threshold=nms_threshold, gt_boxes3d=gt_boxes3d)
+        return self.predict(top_view, front_view, rgb_image, score_threshold=nms_threshold)
 
     def dump_log(self,log_subdir, n_frame):
         n_start = n_frame - (n_frame % (self.n_max_log_per_scope))

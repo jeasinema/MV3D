@@ -21,8 +21,8 @@ CFG.TRAIN.RPN_BG_THRESH_HI = 0.3 # cxz choice   # To decided which is BG(by over
 
 CFG.TRAIN.RPN_NMS_THRESHOLD = 0.5 # 0.7 can be override when using the nms generator, so deprecated(look at config.py instead)
 CFG.TRAIN.RPN_NMS_MIN_SIZE  = 8   # to trunc some extreme small bbox(w.r.t. the real size of the image)
-CFG.TRAIN.RPN_NMS_PRE_TOPN  = 10#100#6000 #12000 6000
-CFG.TRAIN.RPN_NMS_POST_TOPN = 10#30#512 #2000 1200  this is the amount of proposals output by the RPN(Anytime)
+CFG.TRAIN.RPN_NMS_PRE_TOPN  = 1000 #100#6000 #12000 6000
+CFG.TRAIN.RPN_NMS_POST_TOPN = 30 #30#512 #2000 1200  this is the amount of proposals output by the RPN(Anytime)
 
 
 #rcnn

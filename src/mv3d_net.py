@@ -718,6 +718,7 @@ def rpn_loss(scores, deltas, inds, pos_inds, rpn_labels, rpn_targets):
     return rpn_cls_loss, rpn_reg_loss
 
 def remove_empty_anchor(top_view, top_anchors, top_inside_inds):
+    # deprecated!!
     # input:
     # top_view: (B, H, W, C)
     # top_anchors: (N, 4)
@@ -759,7 +760,10 @@ def remove_empty_anchor(top_view, top_anchors, top_inside_inds):
 
 def load(top_shape, front_shape, rgb_shape, num_class, len_bases):
 
-    out_shape = (8, 3)
+    if cfg.USE_ORINT_CLS:
+        out_shape = (6) # x,y,z,h,w,l(in lidar coordinate)
+    else:
+        out_shape = (8, 3)
 
     # for mimic batch size
     top_cls_loss_sum = tf.placeholder(shape=[], dtype=tf.float32, name='top_cls_loss_sum')

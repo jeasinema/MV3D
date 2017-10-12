@@ -36,7 +36,7 @@ def test_3dop(args):
         count += 1
 
 def test_rpn(args):
-  with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=True,
+  with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=False,
     is_testset=True, use_precal_view=False, use_multi_process_num=1) as testset:
     os.makedirs(args.target_dir, exist_ok=True)
     test = mv3d.Tester_RPN(*testset.get_shape(),log_tag=args.tag)
@@ -182,8 +182,8 @@ def test_rpn_origin_dataset_batch(args):
                
 
 def test_mv3d(args):
-    with KittiLoading(object_dir='~/data/kitti/object', queue_size=50, require_shuffle=False,
-        is_testset=True, use_precal_view=True) as testset:
+    with KittiLoading(object_dir='/home/maxiaojian/data/kitti/object', queue_size=50, require_shuffle=False,
+        is_testset=True, use_precal_view=False, use_multi_process_num=1) as testset:
         os.makedirs(args.target_dir, exist_ok=True)
         test = mv3d.Predictor(*testset.get_shape(), log_tag=args.tag)
         data = testset.load()
@@ -192,7 +192,7 @@ def test_mv3d(args):
         while data:
             print('Process {} data'.format(count))
             tag, rgb, _, top_view, front_view = data 
-            boxes3d, labels, probs = test(top_view, front_view, rgb, score_threshold=0.5)
+            boxes3d, labels, probs = test(top_view, front_view, rgb, nms_threshold=0.5)
             np.save(os.path.join(args.target_dir, '{}_boxes3d.npy'.format(tag[0])), boxes3d)
             np.save(os.path.join(args.target_dir, '{}_labels.npy'.format(tag[0])), labels)        
             np.save(os.path.join(args.target_dir, '{}_probs.npy'.format(tag[0])), probs)        
@@ -607,11 +607,11 @@ if __name__ == '__main__':
     print('\n\n{}\n\n'.format(args))
 
     # test_3dop()
-    test_rpn(args)
+    # test_rpn(args)
     # test_rpn_origin_dataset(args)
     # test_lidar_fast()
     # test_lidar()
-    # test_mv3d(args)
+    test_mv3d(args)
     # test_single_mv3d(args)
     # if args.interactive:
     #     test_rpn_target_interact(args)
